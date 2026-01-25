@@ -71,9 +71,8 @@ pub enum Expr {
         not: bool,
         right: Box<Expr>,
     },
-    Splice {
+    Slice {
         list: String,
-        is_splice: bool,
         start: Option<Box<Expr>>,
         end: Option<Box<Expr>>,
     },
@@ -147,9 +146,7 @@ impl fmt::Display for Expr {
                 }
                 write!(f, "{left} in {right}")
             }
-            Expr::Splice { list, is_splice: _, start, end } => {
-                write!(f, "{list}[{start:?}:{end:?}]")
-            }
+            Expr::Slice { list, start, end } => { write!(f, "{list}[{start:?}:{end:?}]") }
             Expr::Unary { operator, right } => write!(f, "Unary({operator} {right})"),
             Expr::Var { name } => write!(f, "Var({name})"),
         };

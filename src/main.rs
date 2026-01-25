@@ -1,3 +1,4 @@
+mod codegen;
 mod expr;
 mod lexer;
 mod parser;
@@ -5,6 +6,7 @@ mod stmt;
 mod token;
 mod value;
 
+use codegen::{ Bytecode, CodeGen };
 use lexer::Lexer;
 use parser::Parser;
 use std::{ fs, io };
@@ -18,12 +20,14 @@ fn main() {
 
     let lexer = Lexer::new(contents.as_str());
     let tokens = lexer.tokenise();
-    println!("{:#?}", tokens);
 
     let mut parser = Parser::new(tokens);
     let ast = parser.parse();
 
-    for stmt in ast {
-        println!("{}", stmt);
+    let mut codegen = CodeGen::new();
+    let bytecode: Vec<Bytecode> = codegen.run(ast);
+
+    for (i, byte) in bytecode.iter().enumerate() {
+        println!("{i}: {:#?}", byte);
     }
 }

@@ -474,7 +474,6 @@ impl Parser {
             let expr = if self.match_all(&[TokenKind::LBrack]) {
                 let mut start: Option<Box<Expr>> = None;
                 let mut end: Option<Box<Expr>> = None;
-                let mut is_splice = false;
 
                 if self.peek().kind != TokenKind::Colon {
                     start = Some(Box::new(self.expression()));
@@ -482,7 +481,6 @@ impl Parser {
                 start = if start.is_some() { Some(start.unwrap()) } else { None };
 
                 if self.match_all(&[TokenKind::Colon]) {
-                    is_splice = true;
                     if self.peek().kind != TokenKind::RBrack {
                         end = Some(Box::new(self.expression()));
                     }
@@ -491,7 +489,7 @@ impl Parser {
 
                 self.consume(TokenKind::RBrack);
 
-                Expr::Splice { list: name, is_splice, start, end }
+                Expr::Slice { list: name, start, end }
             } else {
                 Expr::Var { name }
             };
