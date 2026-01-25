@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TokenKind {
     LParen,
     RParen,
@@ -55,7 +55,7 @@ pub enum TokenKind {
     // Dedent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TextSpan {
     pub start: usize,
     pub end: usize,
@@ -76,7 +76,7 @@ impl TextSpan {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
     pub span: TextSpan,
@@ -92,6 +92,24 @@ impl Token {
         };
     }
 }
+
+// pub struct Span {
+//     pub start: usize,
+//     pub end: usize,
+// }
+
+// impl Span {
+//     pub fn new(start: usize, end: usize) -> Self {
+//         return Self {
+//             start,
+//             end,
+//         };
+//     }
+
+//     pub fn _length(self) -> usize {
+//         return self.end - self.start;
+//     }
+// }
 
 impl fmt::Display for TokenKind {
     /// Implements the `Display` trait for `TokenKind` to provide a string representation

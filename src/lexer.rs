@@ -1,9 +1,6 @@
-#[path = "./token.rs"]
-mod token;
-
 use std::{ collections::HashMap, iter::Peekable, str::Chars };
 
-use token::{ Token, TokenKind, TextSpan };
+use crate::token::{ TextSpan, Token, TokenKind };
 
 use crate::keywords;
 
@@ -195,26 +192,40 @@ impl<'a> Lexer<'a> {
         return String::from_iter(string);
     }
 
-    fn consume_number(&mut self, c: char) -> f64 {
-        let mut num_vec: Vec<char> = vec![c];
+    fn consume_number(&mut self, first_digit: char) -> f64 {
+        let mut num_vec: Vec<char> = vec![first_digit];
 
-        while self.input.peek().is_some() && self.is_digit(None) {
-            if let Some(n) = self.input.next() {
+        while let Some(&next) = self.input.peek() {
+            if next == '.' {
+                let mut iter = self.input.clone();
+                iter.next();
+                if iter.next() == Some('.') {
+                    break;
+                }
+            }
+
+            if next.is_ascii_digit() {
                 self.pos += 1;
-                num_vec.push(n);
+                num_vec.push(self.input.next().unwrap());
+            } else {
+                break;
             }
         }
 
-        if let Some(c) = self.input.peek() {
-            if *c == '.' {
-                num_vec.push('.');
-                self.input.next();
-                self.pos += 1;
-                if self.is_digit(None) {
-                    while self.input.peek().is_some() && self.is_digit(None) {
-                        if let Some(n) = self.input.next() {
+        if let Some(&next) = self.input.peek() {
+            if next == '.' {
+                let mut iter = self.input.clone();
+                iter.next();
+                if iter.next() != Some('.') {
+                    num_vec.push(self.input.next().unwrap());
+                    self.pos += 1;
+
+                    while let Some(&next_digit) = self.input.peek() {
+                        if next_digit.is_ascii_digit() {
                             self.pos += 1;
-                            num_vec.push(n);
+                            num_vec.push(self.input.next().unwrap());
+                        } else {
+                            break;
                         }
                     }
                 }

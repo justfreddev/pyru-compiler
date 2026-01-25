@@ -1,3 +1,7 @@
 if var + 5 == 6 {
     print("Yes");
 }
+
+for i in 1..10 step 2 {
+    print(i);
+}

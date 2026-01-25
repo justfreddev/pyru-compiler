@@ -1,7 +1,13 @@
+mod expr;
 mod lexer;
+mod parser;
+mod stmt;
+mod token;
+mod value;
 
-use std::{ fs, io };
 use lexer::Lexer;
+use parser::Parser;
+use std::{ fs, io };
 
 fn main() {
     let mut file_name_input = String::new();
@@ -13,4 +19,11 @@ fn main() {
     let lexer = Lexer::new(contents.as_str());
     let tokens = lexer.tokenise();
     println!("{:#?}", tokens);
+
+    let mut parser = Parser::new(tokens);
+    let ast = parser.parse();
+
+    for stmt in ast {
+        println!("{}", stmt);
+    }
 }
