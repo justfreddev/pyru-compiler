@@ -9,15 +9,23 @@ pub struct Lexer<'a> {
     pub tokens: Vec<Token>,
     line: usize,
     pos: usize,
+    kw: HashMap<String, TokenKind>,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
+        let mut kw: HashMap<String, TokenKind> = HashMap::new();
+        keywords!(
+            kw;
+            And, Def, Else, False, For, If, In, Let, Not,
+            Null, Or, Print, Return, Step, True, While
+        );
         return Self {
             input: input.chars().peekable(),
             tokens: vec![],
             line: 0,
             pos: 0,
+            kw,
         };
     }
 
@@ -245,14 +253,7 @@ impl<'a> Lexer<'a> {
         }
         let text = String::from_iter(string);
 
-        let mut kw: HashMap<String, TokenKind> = HashMap::new();
-        keywords!(
-            kw;
-            And, Def, Else, False, For, If, In, Let, Not,
-            Null, Or, Print, Return, Step, True, While
-        );
-
-        match kw.get(&text) {
+        match self.kw.get(&text) {
             Some(v) => {
                 return (*v, None);
             }

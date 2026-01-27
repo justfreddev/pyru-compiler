@@ -5,7 +5,7 @@ use crate::{
     value::LiteralType,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Bytecode {
     // Stack operations
     PushNum(f64),
@@ -39,12 +39,11 @@ pub enum Bytecode {
     Not,
 
     // Control flow
-    Jump(usize), // unconditional jump
-    JumpIfFalse(usize), // pop stack; jump if false
-    JumpIfTrue(usize), // pop stack; jump if true
+    Jump(isize), // unconditional jump
+    JumpIfFalse(isize), // pop stack; jump if false
 
     // Function
-    Function(String, usize, Vec<Bytecode>),
+    Function(String, Vec<String>, Vec<Bytecode>),
     Call(usize), // call function by name, with N args
     Return,
 
@@ -57,18 +56,13 @@ pub enum Bytecode {
     In, // Membership
     Slice(bool, bool), // pop end, start, list, push slice
     ListMethodCall(String, usize), // call method on list
-
-    Increment(String),
-    Decrement(String),
 }
 
-pub struct CodeGen {
-    pub offset: usize,
-}
+pub struct CodeGen {}
 
 impl CodeGen {
     pub fn new() -> Self {
-        return Self { offset: 0 };
+        return Self {};
     }
 
     pub fn run(&mut self, ast: Vec<Stmt>) -> Vec<Bytecode> {
@@ -76,7 +70,6 @@ impl CodeGen {
 
         for stmt in ast {
             let bc = self.visit_stmt(&stmt);
-            self.offset += bc.len();
             bytecode.extend(bc);
         }
 
@@ -85,30 +78,6 @@ impl CodeGen {
 
     fn visit_expr(&mut self, expr: &Expr) -> Vec<Bytecode> {
         match expr {
-            Expr::Alteration { name, alteration_type } => {
-                let mut code = vec![Bytecode::LoadVar(name.clone())];
-                match alteration_type {
-                    TokenKind::Incr => code.push(Bytecode::PushNum(1.0)),
-                    TokenKind::Decr => code.push(Bytecode::PushNum(-1.0)),
-                    _ => panic!("Unexpected token kind in alteration codegen"),
-                }
-
-                code.push(Bytecode::Add);
-                code.push(Bytecode::StoreVar(name.clone()));
-
-                return code;
-            }
-
-            Expr::Assign { name, value } => {
-                let mut code = vec![Bytecode::LoadVar(name.clone())];
-
-                if let Expr::Literal { value: _ } = &**value {
-                    code.extend(self.visit_expr(value));
-                }
-
-                return code;
-            }
-
             Expr::Binary { left, operator, right } => {
                 let mut code = vec![];
 
@@ -150,6 +119,15 @@ impl CodeGen {
                 let mut code = vec![];
 
                 code.extend(self.visit_expr(expression));
+
+                return code;
+            }
+
+            Expr::Index { list, index } => {
+                let mut code = vec![];
+
+                code.push(Bytecode::LoadVar(list.clone()));
+                code.extend(self.visit_expr(index));
 
                 return code;
             }
@@ -275,6 +253,35 @@ impl CodeGen {
 
     fn visit_stmt(&mut self, stmt: &Stmt) -> Vec<Bytecode> {
         match stmt {
+            Stmt::Assign { name, value } => {
+                let mut code = vec![Bytecode::LoadVar(name.clone())];
+
+                code.extend(self.visit_expr(value));
+
+                code.push(Bytecode::StoreVar(name.clone()));
+
+                return code;
+            }
+
+            Stmt::Block { stmts } => {
+                let mut code = vec![];
+
+                for statement in stmts {
+                    code.extend(self.visit_stmt(statement));
+                }
+
+                return code;
+            }
+
+            Stmt::Decr { name } => {
+                return vec![
+                    Bytecode::LoadVar(name.clone()),
+                    Bytecode::PushNum(-1.0),
+                    Bytecode::Add,
+                    Bytecode::StoreVar(name.clone())
+                ];
+            }
+
             Stmt::Expression { expression } => {
                 let mut code = self.visit_expr(expression);
                 code.push(Bytecode::Pop);
@@ -286,37 +293,25 @@ impl CodeGen {
 
                 code.extend(self.visit_stmt(initializer));
 
-                let loop_start = self.offset + code.len();
+                let loop_start = code.len();
 
                 code.extend(self.visit_expr(condition));
 
-                let jump_to_end = self.offset + code.len();
-                code.push(Bytecode::JumpIfFalse(0)); // Placeholder
+                let jif_index = code.len();
+                code.push(Bytecode::JumpIfFalse(0));
 
                 for stmt in body {
                     code.extend(self.visit_stmt(stmt));
                 }
 
-                match step {
-                    Expr::Alteration { name, .. } => {
-                        code.extend(self.visit_expr(step));
-                        code.push(Bytecode::StoreVar(name.clone()));
-                    }
-                    Expr::Assign { name, value } => {
-                        code.extend(self.visit_expr(value));
-                        code.push(Bytecode::StoreVar(name.clone()));
-                    }
-                    _ => {
-                        code.extend(self.visit_expr(step));
-                        code.push(Bytecode::Pop);
-                    }
-                }
+                code.extend(self.visit_stmt(step));
 
-                code.push(Bytecode::Jump(loop_start));
+                let back_offset = (loop_start as isize) - (code.len() as isize) - 1;
+                code.push(Bytecode::Jump(back_offset));
 
-                let loop_end = self.offset + code.len();
-                if let Bytecode::JumpIfFalse(ref mut target) = code[jump_to_end - self.offset] {
-                    *target = loop_end;
+                let loop_end = code.len() as isize;
+                if let Bytecode::JumpIfFalse(ref mut offset) = code[jif_index] {
+                    *offset = loop_end - (jif_index as isize) - 1;
                 }
 
                 return code;
@@ -331,7 +326,7 @@ impl CodeGen {
                 fn_code.push(Bytecode::PushNull); // ensure functions always return a value
 
                 let mut code = vec![];
-                code.push(Bytecode::Function(name.clone(), params.len(), fn_code));
+                code.push(Bytecode::Function(name.clone(), params.clone(), fn_code));
                 code.push(Bytecode::StoreVar(name.clone())); // bind function to name
 
                 return code;
@@ -342,36 +337,40 @@ impl CodeGen {
 
                 code.extend(self.visit_expr(condition));
 
-                let jump_to_else = self.offset + code.len();
+                let jif_index = code.len();
                 code.push(Bytecode::JumpIfFalse(0));
 
                 for stmt in then_branch {
                     code.extend(self.visit_stmt(stmt));
                 }
 
+                let jmp_index = code.len();
+                code.push(Bytecode::Jump(0));
+
+                let else_start = code.len() as isize;
+                if let Bytecode::JumpIfFalse(ref mut offset) = code[jif_index] {
+                    *offset = else_start - (jif_index as isize) - 1;
+                }
+
                 if let Some(else_stmt) = else_branch {
-                    let jump_to_end = self.offset + code.len();
-                    code.push(Bytecode::Jump(0));
-
-                    let else_start = self.offset + code.len();
-                    if let Bytecode::JumpIfFalse(ref mut target) = code[jump_to_else - self.offset] {
-                        *target = else_start;
-                    }
-
                     code.extend(self.visit_stmt(else_stmt));
+                }
 
-                    let end = self.offset + code.len();
-                    if let Bytecode::Jump(ref mut target) = code[jump_to_end - self.offset] {
-                        *target = end;
-                    }
-                } else {
-                    let end = self.offset + code.len();
-                    if let Bytecode::JumpIfFalse(ref mut target) = code[jump_to_else - self.offset] {
-                        *target = end;
-                    }
+                let end = code.len();
+                if let Bytecode::Jump(ref mut offset) = code[jmp_index] {
+                    *offset = (end as isize) - (jmp_index as isize) - 1;
                 }
 
                 return code;
+            }
+
+            Stmt::Incr { name } => {
+                return vec![
+                    Bytecode::LoadVar(name.clone()),
+                    Bytecode::PushNum(1.0),
+                    Bytecode::Add,
+                    Bytecode::StoreVar(name.clone())
+                ];
             }
 
             Stmt::Print { expression } => {
@@ -405,21 +404,22 @@ impl CodeGen {
             Stmt::While { condition, body } => {
                 let mut code = vec![];
 
-                let loop_start = code.len();
+                let loop_start = code.len() as isize;
                 code.extend(self.visit_expr(condition));
 
-                let jump_to_end = code.len();
+                let jif_index = code.len();
                 code.push(Bytecode::JumpIfFalse(0));
 
                 for stmt in body {
                     code.extend(self.visit_stmt(stmt));
                 }
 
-                code.push(Bytecode::Jump(loop_start));
+                let back_offset = (loop_start as isize) - (code.len() as isize) - 1;
+                code.push(Bytecode::Jump(back_offset));
 
-                let loop_end = code.len();
-                if let Bytecode::JumpIfFalse(ref mut target) = code[jump_to_end] {
-                    *target = loop_end;
+                let loop_end = code.len() as isize;
+                if let Bytecode::JumpIfFalse(ref mut offset) = code[jif_index] {
+                    *offset = loop_end - (jif_index as isize);
                 }
 
                 return code;

@@ -31,14 +31,6 @@ pub enum UnaryOp {
 
 #[derive(Debug)]
 pub enum Expr {
-    Alteration {
-        name: String,
-        alteration_type: TokenKind,
-    },
-    Assign {
-        name: String,
-        value: Box<Expr>,
-    },
     Binary {
         left: Box<Expr>,
         operator: BinaryOp,
@@ -50,6 +42,10 @@ pub enum Expr {
     },
     Grouping {
         expression: Box<Expr>,
+    },
+    Index {
+        list: String,
+        index: Box<Expr>,
     },
     List {
         items: Vec<Expr>,
@@ -125,15 +121,12 @@ impl fmt::Display for Expr {
     /// of each expression variant.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return match self {
-            Expr::Alteration { name, alteration_type } => {
-                write!(f, "Alteration({name} {alteration_type})")
-            }
-            Expr::Assign { name, value } => write!(f, "Assign({name} = {value}"),
             Expr::Binary { left, operator, right } => {
                 write!(f, "Binary({left} {operator} {right})")
             }
             Expr::Call { callee, arguments } => write!(f, "Call({callee} {arguments:?})"),
             Expr::Grouping { expression } => write!(f, "Grouping({expression})"),
+            Expr::Index { list, index } => write!(f, "{list}[{index}]"),
             Expr::List { items } => write!(f, "[{items:?}]"),
             Expr::ListMethodCall { object, call } => write!(f, "{object}.{call}"),
             Expr::Literal { value } => write!(f, "{value}"),

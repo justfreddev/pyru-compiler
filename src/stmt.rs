@@ -1,16 +1,26 @@
 use std::fmt;
 
-use crate::expr::Expr;
+use crate::{ expr::Expr };
 
 #[derive(Debug)]
 pub enum Stmt {
+    Assign {
+        name: String,
+        value: Box<Expr>,
+    },
+    Block {
+        stmts: Vec<Stmt>,
+    },
+    Decr {
+        name: String,
+    },
     Expression {
         expression: Expr,
     },
     For {
         initializer: Box<Stmt>,
         condition: Expr,
-        step: Expr,
+        step: Box<Stmt>,
         body: Vec<Stmt>,
     },
     Function {
@@ -22,6 +32,9 @@ pub enum Stmt {
         condition: Expr,
         then_branch: Vec<Stmt>,
         else_branch: Option<Box<Stmt>>,
+    },
+    Incr {
+        name: String,
     },
     Print {
         expression: Expr,
@@ -44,6 +57,9 @@ impl fmt::Display for Stmt {
     /// of each statement variant.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Stmt::Assign { name, value } => write!(f, "Assign({name} = {value}"),
+            Stmt::Block { stmts } => write!(f, "Block({stmts:?})"),
+            Stmt::Decr { name } => write!(f, "{name}--"),
             Stmt::Expression { expression } => write!(f, "Expression({expression})"),
             Stmt::For { initializer, condition, step, body } => {
                 return write!(f, "For({initializer:?} {condition} {step:?} {body:?})");
@@ -62,6 +78,7 @@ impl fmt::Display for Stmt {
                     return write!(f, "If({condition} {then_branch:?})");
                 }
             }
+            Stmt::Incr { name } => write!(f, "{name}++"),
             Stmt::Print { expression } => write!(f, "Print({expression})"),
             Stmt::Return { value } => {
                 return write!(f, "Return({value:?})");

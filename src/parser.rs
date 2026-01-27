@@ -37,7 +37,6 @@ impl Parser {
 
     fn function(&mut self) -> Stmt {
         let name = self.consume(TokenKind::Identifier).span.literal.clone();
-
         self.consume(TokenKind::LParen);
 
         let mut params: Vec<String> = Vec::new();
@@ -56,7 +55,6 @@ impl Parser {
         }
 
         self.consume(TokenKind::RParen);
-        self.consume(TokenKind::Colon);
         let body = self.block();
 
         return Stmt::Function { name, params, body };
@@ -93,6 +91,9 @@ impl Parser {
         if self.match_all(&[TokenKind::While]) {
             return self.while_statement();
         }
+        if self.match_all(&[TokenKind::Identifier]) {
+            return self.assignment_statement();
+        }
 
         return self.expression_statement();
     }
@@ -109,16 +110,16 @@ impl Parser {
 
         let step = if self.match_all(&[TokenKind::Step]) {
             let value = self.expression();
-            Expr::Assign {
+            Box::new(Stmt::Assign {
                 name: name.clone(),
                 value: Box::new(Expr::Binary {
                     operator: BinaryOp::Add,
                     left: Box::new(Expr::Var { name: name.clone() }),
                     right: Box::new(value),
                 }),
-            }
+            })
         } else {
-            Expr::Alteration { name: name.clone(), alteration_type: TokenKind::Incr }
+            Box::new(Stmt::Incr { name: name.clone() })
         };
 
         let initializer = Stmt::Var { name: name.clone(), initializer: Some(start) };
@@ -145,7 +146,11 @@ impl Parser {
         let then_branch = self.block();
 
         let else_branch = if self.match_all(&[TokenKind::Else]) {
-            Some(Box::new(self.statement()))
+            if self.check(TokenKind::LBrace) {
+                Some(Box::new(Stmt::Block { stmts: self.block() }))
+            } else {
+                Some(Box::new(self.statement()))
+            }
         } else {
             None
         };
@@ -166,7 +171,6 @@ impl Parser {
     }
 
     fn return_statement(&mut self) -> Stmt {
-        self.consume(TokenKind::Return);
         let mut value = None;
         if !self.check(TokenKind::Semicolon) {
             value = Some(self.expression());
@@ -184,6 +188,34 @@ impl Parser {
         return Stmt::While { condition, body };
     }
 
+    fn assignment_statement(&mut self) -> Stmt {
+        let name = (
+            match self.previous().kind {
+                TokenKind::Identifier => &self.previous().span.literal,
+                _ => panic!("Expected identifier"),
+            }
+        ).clone();
+
+        if self.match_all(&[TokenKind::Incr]) {
+            self.consume(TokenKind::Semicolon);
+            return Stmt::Incr { name };
+        }
+        if self.match_all(&[TokenKind::Decr]) {
+            self.consume(TokenKind::Semicolon);
+            return Stmt::Decr { name };
+        }
+
+        if self.match_all(&[TokenKind::Equal]) {
+            let value = self.expression();
+            self.consume(TokenKind::Semicolon);
+            return Stmt::Assign {
+                name,
+                value: Box::new(value),
+            };
+        }
+        panic!("What")
+    }
+
     fn block(&mut self) -> Vec<Stmt> {
         let mut statements = Vec::new();
 
@@ -198,39 +230,7 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Expr {
-        return self.assignment();
-    }
-
-    fn assignment(&mut self) -> Expr {
-        let expr = self.or();
-
-        if self.match_all(&[TokenKind::Incr, TokenKind::Decr]) {
-            match expr {
-                Expr::Var { name } =>
-                    match self.previous().kind {
-                        TokenKind::Incr => {
-                            return Expr::Alteration { name, alteration_type: TokenKind::Incr };
-                        }
-                        TokenKind::Decr => {
-                            return Expr::Alteration { name, alteration_type: TokenKind::Decr };
-                        }
-                        _ => {
-                            panic!("Expected alteration expression");
-                        }
-                    }
-                _ => panic!("Invalid alteration target"),
-            }
-        } else if self.match_all(&[TokenKind::Equal]) {
-            let value = self.assignment();
-            match expr {
-                Expr::Var { name } => {
-                    return Expr::Assign { name, value: Box::new(value) };
-                }
-                _ => panic!("Invalid Assignment target"),
-            }
-        }
-
-        return expr;
+        return self.or();
     }
 
     fn or(&mut self) -> Expr {
@@ -519,6 +519,7 @@ impl Parser {
             return Expr::List { items };
         }
 
+        println!("{}", self.tokens[self.current]);
         panic!("Expected expression")
     }
 

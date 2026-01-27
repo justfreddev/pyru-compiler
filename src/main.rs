@@ -5,10 +5,12 @@ mod parser;
 mod stmt;
 mod token;
 mod value;
+mod vm;
 
 use codegen::{ Bytecode, CodeGen };
 use lexer::Lexer;
 use parser::Parser;
+use vm::VM;
 use std::{ fs, io };
 
 fn main() {
@@ -27,7 +29,10 @@ fn main() {
     let mut codegen = CodeGen::new();
     let bytecode: Vec<Bytecode> = codegen.run(ast);
 
-    for (i, byte) in bytecode.iter().enumerate() {
-        println!("{i}: {:#?}", byte);
-    }
+    // for (idx, bytes) in bytecode.iter().enumerate() {
+    //     println!("{idx}: {bytes:#?}");
+    // }
+
+    let mut vm = VM::new(bytecode);
+    vm.execute();
 }
