@@ -504,6 +504,9 @@ impl Parser {
                         end = Some(Box::new(self.expression()));
                     }
                     end = if end.is_some() { Some(end.unwrap()) } else { None };
+                } else {
+                    self.consume(TokenKind::RBrack);
+                    return Expr::Index { list: name, index: start.unwrap() };
                 }
 
                 self.consume(TokenKind::RBrack);

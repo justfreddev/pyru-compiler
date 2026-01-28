@@ -1,14 +1,14 @@
-use std::{ collections::HashMap, fmt, rc::Rc };
+use std::{ cell::RefCell, collections::HashMap, fmt, rc::Rc };
 
-use crate::{ codegen::Bytecode };
+use crate::{ codegen::Bytecode, list::{ call_list_method } };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {
     Num(f64),
     Str(String),
     Bool(bool),
     Null,
-    List(Vec<Value>),
+    List(Rc<RefCell<Vec<Value>>>),
     Function {
         params: Vec<String>,
         arity: usize,
@@ -298,7 +298,14 @@ impl VM {
 
                 Bytecode::Print => {
                     let val = self.stack.pop().expect("Stack underflow when printing");
-                    println!("{}", val);
+                    match val {
+                        Value::Str(s) => println!("{s}"),
+                        Value::Num(_) => println!("{}", VM::stringify(&val)),
+                        Value::Bool(_) => println!("{}", VM::stringify(&val)),
+                        Value::Null => println!("null"),
+                        Value::List(_) => println!("{}", val),
+                        _ => panic!("Can't print function"),
+                    }
                 }
 
                 Bytecode::MakeList(n) => {
@@ -306,32 +313,34 @@ impl VM {
                     for _ in 0..*n {
                         list.push(self.stack.pop().expect("Stack underflow when making a list"));
                     }
-                    self.stack.push(Value::List(list));
+                    self.stack.push(Value::List(Rc::new(RefCell::new(list))));
                 }
                 Bytecode::Index => {
                     let index = self.stack.pop().expect("Stack underflow when indexing list");
                     let list = self.stack.pop().expect("Stack underflow when indexing list");
 
-                    if let Value::Num(i) = index {
-                        if let Value::List(v) = list {
-                            self.stack.push(v[i as usize].clone());
-                        } else {
-                            panic!("List being indexed isn't a list");
+                    let i = match index {
+                        Value::Num(n) => n as usize,
+                        _ => panic!("Num used to index isn't a num"),
+                    };
+
+                    match list {
+                        Value::List(l) => {
+                            let vec = l.borrow();
+                            self.stack.push(vec[i].clone());
                         }
-                    } else {
-                        panic!("Num used to index isn't a num");
+                        _ => panic!("List being indexed isn't a list"),
                     }
                 }
                 Bytecode::In => {
                     let list = self.stack.pop().expect("Stack underflow for In");
                     let item = self.stack.pop().expect("Stack underflow for In");
 
-                    let result = match (item, list) {
-                        (Value::Num(n), Value::List(l)) => l.iter().any(|v| *v == Value::Num(n)),
-                        (Value::Str(s), Value::List(l)) =>
-                            l.iter().any(|v| *v == Value::Str(s.clone())),
-                        (Value::Bool(b), Value::List(l)) => l.iter().any(|v| *v == Value::Bool(b)),
-                        (e, Value::List(l)) => l.iter().any(|v| *v == e),
+                    let result = match list {
+                        Value::List(l) => {
+                            let vec = l.borrow();
+                            vec.iter().any(|v| *v == item)
+                        }
                         _ => panic!("Invalid operands for in"),
                     };
 
@@ -354,6 +363,7 @@ impl VM {
 
                     let result = match list {
                         Value::List(l) => {
+                            let vec = l.borrow();
                             let start_index = match start {
                                 Some(Value::Num(n)) => n as usize,
                                 None => 0,
@@ -362,12 +372,12 @@ impl VM {
 
                             let end_index = match end {
                                 Some(Value::Num(n)) => n as usize,
-                                None => l.len(),
+                                None => vec.len(),
                                 Some(_) => panic!("Slice end must be a number"),
                             };
 
-                            let sliced = l[start_index..end_index.min(l.len())].to_vec();
-                            Value::List(sliced)
+                            let sliced = vec[start_index..end_index.min(vec.len())].to_vec();
+                            Value::List(Rc::new(RefCell::new(sliced)))
                         }
                         _ => panic!("Slice applied to non-list value"),
                     };
@@ -381,45 +391,15 @@ impl VM {
                     }
                     args.reverse();
 
-                    let list = self.stack.pop().expect("Stack underflow for list method call");
+                    let list_val = self.stack.pop().expect("Stack underflow for list method call");
 
-                    let result = match list {
-                        Value::List(mut l) =>
-                            match method_name.as_str() {
-                                "append" => {
-                                    if *argc != 1 {
-                                        panic!("append expects 1 argument");
-                                    }
-                                    l.push(args.remove(0));
-                                    Value::List(l)
-                                }
-                                "pop" => {
-                                    if *argc == 0 {
-                                        l.pop().unwrap_or(Value::Null)
-                                    } else if *argc == 1 {
-                                        let idx = match &args[0] {
-                                            Value::Num(n) => *n as usize,
-                                            _ => panic!("pop index must be a number"),
-                                        };
-                                        if idx >= l.len() {
-                                            Value::Null
-                                        } else {
-                                            l.remove(idx)
-                                        }
-                                    } else {
-                                        panic!("pop expects 0 or 1 arguments");
-                                    }
-                                }
-                                "len" => {
-                                    if *argc != 0 {
-                                        panic!("len expects 0 arguments");
-                                    }
-                                    Value::Num(l.len() as f64)
-                                }
-                                _ => panic!("Unknown list method: {}", method_name),
-                            }
+                    let list = match list_val {
+                        Value::List(l) => l,
                         _ => panic!("List method called on non-list"),
                     };
+
+                    // Call the method (returns Value::List or item)
+                    let result = call_list_method(list.clone(), method_name, args);
 
                     self.stack.push(result);
                 }
@@ -429,16 +409,51 @@ impl VM {
             }
         }
     }
+
+    pub fn stringify(object: &Value) -> String {
+        return match object {
+            Value::Num(n) => {
+                let mut text = n.to_string();
+                if text.ends_with(".0") {
+                    text.truncate(text.len() - 2);
+                }
+                text
+            }
+            Value::Str(s) => String::from("\"".to_string() + s + "\""),
+            Value::Bool(b) => b.to_string(),
+            Value::Null => "null".to_string(),
+            Value::List(l) => {
+                let vec = l.borrow();
+                let mut text = String::from("[");
+                text.push_str(
+                    &vec
+                        .iter()
+                        .map(|item| VM::stringify(item))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                text.push(']');
+                text
+            }
+            _ => panic!("Unable to stringify value"),
+        };
+    }
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return match self {
-            Value::Num(n) => write!(f, "{n}"),
+            Value::Num(n) => {
+                let mut text = n.to_string();
+                if text.ends_with(".0") {
+                    text.truncate(text.len() - 2);
+                }
+                write!(f, "{text}")
+            }
             Value::Str(s) => write!(f, "{s}"),
             Value::Bool(x) => write!(f, "{x}"),
             Value::Null => write!(f, "null"),
-            Value::List(v) => write!(f, "{v:?}"),
+            Value::List(_) => write!(f, "{}", VM::stringify(self)),
             Value::Function { .. } => todo!(),
         };
     }

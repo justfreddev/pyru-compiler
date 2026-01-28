@@ -1,11 +1,6 @@
-use crate::{
-    expr::{ BinaryOp, Expr, LogicalOp, UnaryOp },
-    stmt::{ Stmt },
-    token::TokenKind,
-    value::LiteralType,
-};
+use crate::{ expr::{ BinaryOp, Expr, LogicalOp, UnaryOp }, stmt::{ Stmt }, value::LiteralType };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum Bytecode {
     // Stack operations
     PushNum(f64),
@@ -128,6 +123,7 @@ impl CodeGen {
 
                 code.push(Bytecode::LoadVar(list.clone()));
                 code.extend(self.visit_expr(index));
+                code.push(Bytecode::Index);
 
                 return code;
             }
@@ -135,7 +131,7 @@ impl CodeGen {
             Expr::List { items } => {
                 let mut code = vec![];
 
-                for item in items {
+                for item in items.iter().rev() {
                     code.extend(self.visit_expr(item));
                 }
 
@@ -283,6 +279,12 @@ impl CodeGen {
             }
 
             Stmt::Expression { expression } => {
+                if let Expr::ListMethodCall { object, .. } = expression {
+                    let mut code = self.visit_expr(expression);
+                    code.push(Bytecode::StoreVar(object.clone()));
+                    return code;
+                }
+
                 let mut code = self.visit_expr(expression);
                 code.push(Bytecode::Pop);
                 return code;
