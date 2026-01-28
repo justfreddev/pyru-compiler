@@ -31,7 +31,7 @@ pub enum Stmt {
     If {
         condition: Expr,
         then_branch: Vec<Stmt>,
-        else_branch: Option<Box<Stmt>>,
+        else_branch: Option<Vec<Stmt>>,
     },
     Incr {
         name: String,
@@ -71,7 +71,7 @@ impl fmt::Display for Stmt {
                 if else_branch.is_some() {
                     return write!(
                         f,
-                        "If({condition} {then_branch:?} {})",
+                        "If({condition} {then_branch:?} {:?})",
                         else_branch.as_ref().unwrap()
                     );
                 } else {

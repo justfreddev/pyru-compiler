@@ -8,6 +8,9 @@ pub struct Lexer<'a> {
     input: Peekable<Chars<'a>>,
     pub tokens: Vec<Token>,
     line: usize,
+    is_new_line: bool,
+    indented: bool,
+    indent: usize,
     pos: usize,
     kw: HashMap<String, TokenKind>,
 }
@@ -23,9 +26,12 @@ impl<'a> Lexer<'a> {
         return Self {
             input: input.chars().peekable(),
             tokens: vec![],
-            line: 0,
-            pos: 0,
+            line: 1,
+            pos: 1,
             kw,
+            is_new_line: false,
+            indent: 0,
+            indented: false,
         };
     }
 
@@ -34,6 +40,8 @@ impl<'a> Lexer<'a> {
         while let Some(c) = self.input.next() {
             curr_pos = self.pos;
             self.pos += 1;
+
+            self.handle_indents();
 
             match c {
                 '(' => self.push_token(TokenKind::LParen, curr_pos),
@@ -104,12 +112,16 @@ impl<'a> Lexer<'a> {
                         break;
                     }
                     self.line += 1;
+                    self.is_new_line = true;
                     self.pos = 0;
+                    self.handle_indents();
                 }
 
                 '\n' => {
                     self.line += 1;
+                    self.is_new_line = true;
                     self.pos = 0;
+                    self.handle_indents();
                 }
                 ' ' | '\t' => {}
                 '/' => {
@@ -140,11 +152,15 @@ impl<'a> Lexer<'a> {
                         let (kind, literal) = self.consume_identifier(c);
                         self.push_literal_token(kind, literal.unwrap_or_default(), curr_pos);
                     } else {
-                        println!("UNEXPECTED SYMBOL");
+                        panic!("UNEXPECTED SYMBOL");
                         return vec![];
                     }
                 }
             }
+        }
+
+        for _ in 0..self.indent {
+            self.push_token(TokenKind::Dedent, self.pos);
         }
 
         self.tokens.push(
@@ -186,7 +202,7 @@ impl<'a> Lexer<'a> {
                     break;
                 }
                 if c == '\n' {
-                    println!("UNTERMINATED STRING");
+                    panic!("UNTERMINATED STRING");
                     break;
                 }
                 string.push(c);
@@ -194,10 +210,54 @@ impl<'a> Lexer<'a> {
         }
 
         if !terminated {
-            println!("UNTERMINATED STRING");
+            panic!("UNTERMINATED STRING");
         }
 
         return String::from_iter(string);
+    }
+
+    fn handle_indents(&mut self) {
+        const TABSIZE: i32 = 4;
+
+        if self.is_new_line {
+            let mut col = 0;
+            loop {
+                if self.input.peek().is_some() && *self.input.peek().unwrap() == ' ' {
+                    self.input.next();
+                    col += 1;
+                } else if self.input.peek().is_some() && *self.input.peek().unwrap() == '\t' {
+                    col += TABSIZE;
+                } else {
+                    break;
+                }
+            }
+
+            let indent_count = if col % TABSIZE == 0 {
+                (col / TABSIZE) as usize
+            } else {
+                panic!("Incorrect indentation error, col: {col}");
+            };
+
+            if indent_count > self.indent {
+                for _ in 0..indent_count - self.indent {
+                    self.push_token(TokenKind::Indent, self.pos);
+                }
+            } else if indent_count < self.indent {
+                for _ in 0..self.indent - indent_count {
+                    if self.input.peek().is_some() {
+                        self.push_token(TokenKind::Dedent, self.pos);
+                    }
+                }
+            }
+
+            if indent_count > 0 {
+                self.indented = true;
+            } else {
+                self.indented = false;
+            }
+            self.indent = indent_count;
+            self.is_new_line = false;
+        }
     }
 
     fn consume_number(&mut self, first_digit: char) -> f64 {

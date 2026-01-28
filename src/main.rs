@@ -23,6 +23,10 @@ fn main() {
     let lexer = Lexer::new(contents.as_str());
     let tokens = lexer.tokenise();
 
+    // for token in &tokens {
+    //     println!("{token}");
+    // }
+
     let mut parser = Parser::new(tokens);
     let ast = parser.parse();
 

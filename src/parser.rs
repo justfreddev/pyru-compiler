@@ -55,7 +55,7 @@ impl Parser {
         }
 
         self.consume(TokenKind::RParen);
-        let body = self.block();
+        let body = self.body();
 
         return Stmt::Function { name, params, body };
     }
@@ -91,8 +91,15 @@ impl Parser {
         if self.match_all(&[TokenKind::While]) {
             return self.while_statement();
         }
-        if self.match_all(&[TokenKind::Identifier]) {
-            return self.assignment_statement();
+        if self.check(TokenKind::Identifier) {
+            if
+                vec![TokenKind::Equal, TokenKind::Incr, TokenKind::Decr].contains(
+                    &self.tokens[self.current + 1].kind
+                )
+            {
+                self.advance();
+                return self.assignment_statement();
+            }
         }
 
         return self.expression_statement();
@@ -130,7 +137,7 @@ impl Parser {
             right: Box::new(end),
         };
 
-        let body = self.block();
+        let body = self.body();
 
         return Stmt::For {
             initializer: Box::new(initializer),
@@ -143,17 +150,24 @@ impl Parser {
     fn if_statement(&mut self) -> Stmt {
         let condition = self.expression();
 
-        let then_branch = self.block();
+        let then_branch = self.body();
 
-        let else_branch = if self.match_all(&[TokenKind::Else]) {
-            if self.check(TokenKind::LBrace) {
-                Some(Box::new(Stmt::Block { stmts: self.block() }))
-            } else {
-                Some(Box::new(self.statement()))
-            }
-        } else {
-            None
-        };
+        // let else_branch = if self.match_all(&[TokenKind::Else]) {
+        //     if self.check(TokenKind::If) {
+        //         Some(Box::new(self.statement()))
+        //     } else {
+        //         let result = Some(self.body());
+        //         if self.match_all(&[TokenKind::Eof]) {
+        //         } else {
+        //             self.consume(TokenKind::Dedent);
+        //         }
+        //         result
+        //     }
+        // } else {
+        //     None
+        // };
+
+        let else_branch = if self.match_all(&[TokenKind::Else]) { Some(self.body()) } else { None };
 
         return Stmt::If {
             condition,
@@ -183,7 +197,7 @@ impl Parser {
     fn while_statement(&mut self) -> Stmt {
         let condition = self.expression();
 
-        let body = self.block();
+        let body = self.body();
 
         return Stmt::While { condition, body };
     }
@@ -213,18 +227,23 @@ impl Parser {
                 value: Box::new(value),
             };
         }
-        panic!("What")
+        panic!("IT BREAKS HERE CHATGPT")
     }
 
-    fn block(&mut self) -> Vec<Stmt> {
+    fn body(&mut self) -> Vec<Stmt> {
         let mut statements = Vec::new();
 
-        self.consume(TokenKind::LBrace);
-        while !self.check(TokenKind::RBrace) && !self.is_at_end() {
+        self.consume(TokenKind::Colon);
+        self.consume(TokenKind::Indent);
+
+        while !self.check(TokenKind::Dedent) && !self.is_at_end() {
             let stmt = self.declaration();
             statements.push(stmt);
         }
-        self.consume(TokenKind::RBrace);
+        if self.peek().kind == TokenKind::Eof {
+        } else {
+            self.consume(TokenKind::Dedent);
+        }
 
         return statements;
     }

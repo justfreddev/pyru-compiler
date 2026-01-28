@@ -353,7 +353,9 @@ impl CodeGen {
                 }
 
                 if let Some(else_stmt) = else_branch {
-                    code.extend(self.visit_stmt(else_stmt));
+                    for statement in else_stmt {
+                        code.extend(self.visit_stmt(statement));
+                    }
                 }
 
                 let end = code.len();

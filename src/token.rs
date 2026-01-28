@@ -51,8 +51,8 @@ pub enum TokenKind {
     While,
 
     Eof,
-    // Indent,
-    // Dedent,
+    Indent,
+    Dedent,
 }
 
 #[derive(Debug, PartialEq)]
@@ -161,8 +161,8 @@ impl fmt::Display for TokenKind {
             TokenKind::True => write!(f, "True"),
             TokenKind::While => write!(f, "While"),
             TokenKind::Eof => write!(f, "Eof"),
-            // TokenKind::Indent => write!(f, "Indent"),
-            // TokenKind::Dedent => write!(f, "Dedent"),
+            TokenKind::Indent => write!(f, "Indent"),
+            TokenKind::Dedent => write!(f, "Dedent"),
         }
     }
 }
