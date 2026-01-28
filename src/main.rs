@@ -1,10 +1,15 @@
 mod codegen;
+#[path = "./values/expr.rs"]
 mod expr;
 mod lexer;
+#[path = "./values/list.rs"]
 mod list;
 mod parser;
+#[path = "./values/stmt.rs"]
 mod stmt;
+#[path = "./values/token.rs"]
 mod token;
+#[path = "./values/value.rs"]
 mod value;
 mod vm;
 
@@ -29,10 +34,6 @@ fn main() {
 
     let mut codegen = CodeGen::new();
     let bytecode: Vec<Bytecode> = codegen.run(ast);
-
-    // for (idx, bytes) in bytecode.iter().enumerate() {
-    //     println!("{idx}: {bytes:#?}");
-    // }
 
     let mut vm = VM::new(bytecode);
     vm.execute();

@@ -153,7 +153,6 @@ impl<'a> Lexer<'a> {
                         self.push_literal_token(kind, literal.unwrap_or_default(), curr_pos);
                     } else {
                         panic!("UNEXPECTED SYMBOL");
-                        return vec![];
                     }
                 }
             }
@@ -203,7 +202,6 @@ impl<'a> Lexer<'a> {
                 }
                 if c == '\n' {
                     panic!("UNTERMINATED STRING");
-                    break;
                 }
                 string.push(c);
             }

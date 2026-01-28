@@ -1,6 +1,5 @@
 use std::fmt;
 
-use crate::token::{ TokenKind };
 use crate::value::LiteralType;
 
 #[derive(Debug)]

@@ -259,16 +259,6 @@ impl CodeGen {
                 return code;
             }
 
-            Stmt::Block { stmts } => {
-                let mut code = vec![];
-
-                for statement in stmts {
-                    code.extend(self.visit_stmt(statement));
-                }
-
-                return code;
-            }
-
             Stmt::Decr { name } => {
                 return vec![
                     Bytecode::LoadVar(name.clone()),

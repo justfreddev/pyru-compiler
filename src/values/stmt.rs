@@ -8,9 +8,6 @@ pub enum Stmt {
         name: String,
         value: Box<Expr>,
     },
-    Block {
-        stmts: Vec<Stmt>,
-    },
     Decr {
         name: String,
     },
@@ -58,7 +55,6 @@ impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Stmt::Assign { name, value } => write!(f, "Assign({name} = {value}"),
-            Stmt::Block { stmts } => write!(f, "Block({stmts:?})"),
             Stmt::Decr { name } => write!(f, "{name}--"),
             Stmt::Expression { expression } => write!(f, "Expression({expression})"),
             Stmt::For { initializer, condition, step, body } => {
