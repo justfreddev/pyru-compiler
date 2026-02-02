@@ -76,6 +76,14 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Stmt {
+        if self.match_all(&[TokenKind::Break]) {
+            self.consume(TokenKind::Semicolon);
+            return Stmt::Break;
+        }
+        if self.match_all(&[TokenKind::Continue]) {
+            self.consume(TokenKind::Semicolon);
+            return Stmt::Continue;
+        }
         if self.match_all(&[TokenKind::For]) {
             return self.for_statement();
         }
@@ -152,22 +160,15 @@ impl Parser {
 
         let then_branch = self.body();
 
-        // let else_branch = if self.match_all(&[TokenKind::Else]) {
-        //     if self.check(TokenKind::If) {
-        //         Some(Box::new(self.statement()))
-        //     } else {
-        //         let result = Some(self.body());
-        //         if self.match_all(&[TokenKind::Eof]) {
-        //         } else {
-        //             self.consume(TokenKind::Dedent);
-        //         }
-        //         result
-        //     }
-        // } else {
-        //     None
-        // };
-
-        let else_branch = if self.match_all(&[TokenKind::Else]) { Some(self.body()) } else { None };
+        let else_branch = if self.match_all(&[TokenKind::Else]) {
+            if self.match_all(&[TokenKind::If]) {
+                Some(vec![self.if_statement()])
+            } else {
+                Some(self.body())
+            }
+        } else {
+            None
+        };
 
         return Stmt::If {
             condition,
@@ -595,6 +596,7 @@ impl Parser {
         if self.check(kind) {
             return self.advance();
         }
+        println!("{}", self.tokens[self.current]);
         panic!("Couldn't consume token")
     }
 }

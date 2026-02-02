@@ -1,4 +1,9 @@
+use std::collections::HashMap;
+
 use crate::{ expr::{ BinaryOp, Expr, LogicalOp, UnaryOp }, stmt::{ Stmt }, value::LiteralType };
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+struct LabelId(usize);
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum Bytecode {
@@ -34,8 +39,8 @@ pub enum Bytecode {
     Not,
 
     // Control flow
-    Jump(isize), // unconditional jump
-    JumpIfFalse(isize), // pop stack; jump if false
+    Jump(usize), // unconditional jump
+    JumpIfFalse(usize), // pop stack; jump if false
 
     // Function
     Function(String, Vec<String>, Vec<Bytecode>),
@@ -53,31 +58,48 @@ pub enum Bytecode {
     ListMethodCall(String, usize), // call method on list
 }
 
-pub struct CodeGen {}
+struct LoopContext {
+    break_label: LabelId,
+    continue_label: LabelId,
+}
+
+pub struct CodeGen {
+    code: Vec<Bytecode>,
+    next_label_id: usize,
+    label_positions: HashMap<LabelId, usize>,
+    unresolved_jumps: Vec<(usize, LabelId)>,
+    loop_stack: Vec<LoopContext>,
+}
 
 impl CodeGen {
     pub fn new() -> Self {
-        return Self {};
+        return Self {
+            code: vec![],
+            next_label_id: 0,
+            label_positions: HashMap::<LabelId, usize>::new(),
+            unresolved_jumps: vec![],
+            loop_stack: vec![],
+        };
     }
 
     pub fn run(&mut self, ast: Vec<Stmt>) -> Vec<Bytecode> {
-        let mut bytecode: Vec<Bytecode> = vec![];
-
         for stmt in ast {
-            let bc = self.visit_stmt(&stmt);
-            bytecode.extend(bc);
+            self.visit_stmt(&stmt);
         }
 
-        return bytecode;
+        self.patch_jumps();
+        return std::mem::take(&mut self.code);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) -> Vec<Bytecode> {
+    fn emit(&mut self, bc: Bytecode) {
+        self.code.push(bc);
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Binary { left, operator, right } => {
-                let mut code = vec![];
-
-                code.extend(self.visit_expr(left));
-                code.extend(self.visit_expr(right));
+                self.visit_expr(left);
+                self.visit_expr(right);
 
                 let op_code = match operator {
                     BinaryOp::Add => Bytecode::Add,
@@ -91,59 +113,39 @@ impl CodeGen {
                     BinaryOp::Eq => Bytecode::Eq,
                     BinaryOp::NotEq => Bytecode::NotEq,
                 };
-                code.push(op_code);
-
-                return code;
+                self.emit(op_code);
             }
 
             Expr::Call { callee, arguments } => {
-                let mut code = vec![];
-
-                code.extend(self.visit_expr(callee));
+                self.visit_expr(callee);
 
                 for arg in arguments {
-                    code.extend(self.visit_expr(arg));
+                    self.visit_expr(arg);
                 }
 
-                code.push(Bytecode::Call(arguments.len()));
-
-                return code;
+                self.emit(Bytecode::Call(arguments.len()));
             }
 
             Expr::Grouping { expression } => {
-                let mut code = vec![];
-
-                code.extend(self.visit_expr(expression));
-
-                return code;
+                self.visit_expr(expression);
             }
 
             Expr::Index { list, index } => {
-                let mut code = vec![];
-
-                code.push(Bytecode::LoadVar(list.clone()));
-                code.extend(self.visit_expr(index));
-                code.push(Bytecode::Index);
-
-                return code;
+                self.emit(Bytecode::LoadVar(list.clone()));
+                self.visit_expr(index);
+                self.emit(Bytecode::Index);
             }
 
             Expr::List { items } => {
-                let mut code = vec![];
-
                 for item in items.iter().rev() {
-                    code.extend(self.visit_expr(item));
+                    self.visit_expr(item);
                 }
 
-                code.push(Bytecode::MakeList(items.len()));
-
-                return code;
+                self.emit(Bytecode::MakeList(items.len()));
             }
 
             Expr::ListMethodCall { object, call } => {
-                let mut code = vec![];
-
-                code.push(Bytecode::LoadVar(object.clone()));
+                self.emit(Bytecode::LoadVar(object.clone()));
 
                 match call.as_ref() {
                     Expr::Call { callee, arguments } => {
@@ -153,270 +155,281 @@ impl CodeGen {
                         };
 
                         for arg in arguments {
-                            code.extend(self.visit_expr(arg));
+                            self.visit_expr(arg);
                         }
 
-                        code.push(Bytecode::ListMethodCall(method_name, arguments.len()));
+                        self.emit(Bytecode::ListMethodCall(method_name, arguments.len()));
                     }
                     _ => panic!("Unexpected call in ListMethodCall"),
                 }
-
-                return code;
             }
 
             Expr::Literal { value } => {
-                let mut code = vec![];
-
                 match value {
-                    LiteralType::Num(n) => code.push(Bytecode::PushNum(*n)),
-                    LiteralType::Str(s) => code.push(Bytecode::PushStr(s.clone())),
-                    LiteralType::True => code.push(Bytecode::PushBool(true)),
-                    LiteralType::False => code.push(Bytecode::PushBool(false)),
-                    LiteralType::Null => code.push(Bytecode::PushNull),
+                    LiteralType::Num(n) => self.emit(Bytecode::PushNum(*n)),
+                    LiteralType::Str(s) => self.emit(Bytecode::PushStr(s.clone())),
+                    LiteralType::True => self.emit(Bytecode::PushBool(true)),
+                    LiteralType::False => self.emit(Bytecode::PushBool(false)),
+                    LiteralType::Null => self.emit(Bytecode::PushNull),
                 }
-
-                return code;
             }
 
             Expr::Logical { operator, left, right } => {
-                let mut code = vec![];
-
-                code.extend(self.visit_expr(left));
-                code.extend(self.visit_expr(right));
+                self.visit_expr(left);
+                self.visit_expr(right);
 
                 let op_code = match operator {
                     LogicalOp::And => Bytecode::And,
                     LogicalOp::Or => Bytecode::Or,
                 };
-                code.push(op_code);
-
-                return code;
+                self.emit(op_code);
             }
 
             Expr::Membership { left, not, right } => {
-                let mut code = vec![];
+                self.visit_expr(left);
+                self.visit_expr(right);
 
-                code.extend(self.visit_expr(left));
-                code.extend(self.visit_expr(right));
-
-                code.push(Bytecode::In);
+                self.emit(Bytecode::In);
 
                 if *not {
-                    code.push(Bytecode::Not);
+                    self.emit(Bytecode::Not);
                 }
-
-                return code;
             }
 
             Expr::Slice { list, start, end } => {
-                let mut code = vec![];
-
-                code.push(Bytecode::LoadVar(list.clone()));
+                self.emit(Bytecode::LoadVar(list.clone()));
 
                 if let Some(start_expr) = start {
-                    code.extend(self.visit_expr(start_expr));
+                    self.visit_expr(start_expr);
                 }
 
                 if let Some(end_expr) = end {
-                    code.extend(self.visit_expr(end_expr));
+                    self.visit_expr(end_expr);
                 }
 
-                code.push(Bytecode::Slice(start.is_some(), end.is_some()));
-
-                return code;
+                self.emit(Bytecode::Slice(start.is_some(), end.is_some()));
             }
 
             Expr::Unary { operator, right } => {
-                let mut code = vec![];
-
-                code.extend(self.visit_expr(right));
+                self.visit_expr(right);
 
                 let op_code = match operator {
                     UnaryOp::Neg => Bytecode::Neg,
                     UnaryOp::Not => Bytecode::Not,
                 };
 
-                code.push(op_code);
-
-                return code;
+                self.emit(op_code);
             }
 
             Expr::Var { name } => {
-                return vec![Bytecode::LoadVar(name.clone())];
+                return self.emit(Bytecode::LoadVar(name.clone()));
             }
         }
     }
 
-    fn visit_stmt(&mut self, stmt: &Stmt) -> Vec<Bytecode> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Assign { name, value } => {
-                let mut code = vec![Bytecode::LoadVar(name.clone())];
+                self.visit_expr(value);
+                self.emit(Bytecode::StoreVar(name.clone()));
+            }
 
-                code.extend(self.visit_expr(value));
+            Stmt::Break => {
+                let context = self.loop_stack.last().expect("Break outside loop");
 
-                code.push(Bytecode::StoreVar(name.clone()));
+                self.emit_jump(context.break_label);
+            }
 
-                return code;
+            Stmt::Continue => {
+                let context = self.loop_stack.last().expect("Continue outside loop");
+
+                self.emit_jump(context.continue_label);
             }
 
             Stmt::Decr { name } => {
-                return vec![
-                    Bytecode::LoadVar(name.clone()),
-                    Bytecode::PushNum(-1.0),
-                    Bytecode::Add,
-                    Bytecode::StoreVar(name.clone())
-                ];
+                self.emit(Bytecode::LoadVar(name.clone()));
+                self.emit(Bytecode::PushNum(-1.0));
+                self.emit(Bytecode::Add);
+                self.emit(Bytecode::StoreVar(name.clone()));
             }
 
             Stmt::Expression { expression } => {
+                self.visit_expr(expression);
                 if let Expr::ListMethodCall { object, .. } = expression {
-                    let mut code = self.visit_expr(expression);
-                    code.push(Bytecode::StoreVar(object.clone()));
-                    return code;
+                    self.emit(Bytecode::StoreVar(object.clone()));
+                    return;
+                } else {
+                    self.emit(Bytecode::Pop);
                 }
-
-                let mut code = self.visit_expr(expression);
-                code.push(Bytecode::Pop);
-                return code;
             }
 
             Stmt::For { initializer, condition, step, body } => {
-                let mut code = vec![];
+                self.visit_stmt(initializer);
 
-                code.extend(self.visit_stmt(initializer));
+                let cond_label = self.new_label();
+                let continue_label = self.new_label();
+                let break_label = self.new_label();
 
-                let loop_start = code.len();
+                self.place_label(cond_label);
 
-                code.extend(self.visit_expr(condition));
+                self.visit_expr(condition);
+                self.emit_jump_if_false(break_label);
 
-                let jif_index = code.len();
-                code.push(Bytecode::JumpIfFalse(0));
+                self.loop_stack.push(LoopContext { break_label, continue_label });
 
                 for stmt in body {
-                    code.extend(self.visit_stmt(stmt));
+                    self.visit_stmt(stmt);
                 }
 
-                code.extend(self.visit_stmt(step));
+                self.place_label(continue_label);
+                self.visit_stmt(step);
 
-                let back_offset = (loop_start as isize) - (code.len() as isize) - 1;
-                code.push(Bytecode::Jump(back_offset));
+                self.emit_jump(cond_label);
 
-                let loop_end = code.len() as isize;
-                if let Bytecode::JumpIfFalse(ref mut offset) = code[jif_index] {
-                    *offset = loop_end - (jif_index as isize) - 1;
-                }
+                self.loop_stack.pop();
 
-                return code;
+                self.place_label(break_label);
             }
 
             Stmt::Function { name, params, body } => {
-                // Compile function body into its own bytecode chunk
-                let mut fn_code = vec![];
+                let outer_code = std::mem::take(&mut self.code);
+                let outer_labels = std::mem::take(&mut self.label_positions);
+                let outer_unresolved = std::mem::take(&mut self.unresolved_jumps);
+                let outer_loop_stack = std::mem::take(&mut self.loop_stack);
+
+                self.code = vec![];
+                self.label_positions = HashMap::new();
+                self.unresolved_jumps = vec![];
+                self.loop_stack = vec![];
+
                 for stmt in body {
-                    fn_code.extend(self.visit_stmt(stmt));
+                    self.visit_stmt(stmt);
                 }
-                fn_code.push(Bytecode::PushNull); // ensure functions always return a value
 
-                let mut code = vec![];
-                code.push(Bytecode::Function(name.clone(), params.clone(), fn_code));
-                code.push(Bytecode::StoreVar(name.clone())); // bind function to name
+                self.emit(Bytecode::PushNull);
 
-                return code;
+                self.patch_jumps();
+
+                let fn_code = std::mem::take(&mut self.code);
+
+                self.code = outer_code;
+                self.label_positions = outer_labels;
+                self.unresolved_jumps = outer_unresolved;
+                self.loop_stack = outer_loop_stack;
+
+                self.emit(Bytecode::Function(name.clone(), params.clone(), fn_code));
+                self.emit(Bytecode::StoreVar(name.clone()));
             }
 
             Stmt::If { condition, then_branch, else_branch } => {
-                let mut code = vec![];
+                let else_label = self.new_label();
+                let end_label = self.new_label();
 
-                code.extend(self.visit_expr(condition));
-
-                let jif_index = code.len();
-                code.push(Bytecode::JumpIfFalse(0));
+                self.visit_expr(condition);
+                self.emit_jump_if_false(else_label);
 
                 for stmt in then_branch {
-                    code.extend(self.visit_stmt(stmt));
+                    self.visit_stmt(stmt);
                 }
 
-                let jmp_index = code.len();
-                code.push(Bytecode::Jump(0));
+                self.emit_jump(end_label);
 
-                let else_start = code.len() as isize;
-                if let Bytecode::JumpIfFalse(ref mut offset) = code[jif_index] {
-                    *offset = else_start - (jif_index as isize) - 1;
-                }
+                self.place_label(else_label);
 
                 if let Some(else_stmt) = else_branch {
                     for statement in else_stmt {
-                        code.extend(self.visit_stmt(statement));
+                        self.visit_stmt(statement);
                     }
                 }
 
-                let end = code.len();
-                if let Bytecode::Jump(ref mut offset) = code[jmp_index] {
-                    *offset = (end as isize) - (jmp_index as isize) - 1;
-                }
-
-                return code;
+                self.place_label(end_label);
             }
 
             Stmt::Incr { name } => {
-                return vec![
-                    Bytecode::LoadVar(name.clone()),
-                    Bytecode::PushNum(1.0),
-                    Bytecode::Add,
-                    Bytecode::StoreVar(name.clone())
-                ];
+                self.emit(Bytecode::LoadVar(name.clone()));
+                self.emit(Bytecode::PushNum(1.0));
+                self.emit(Bytecode::Add);
+                self.emit(Bytecode::StoreVar(name.clone()));
             }
 
             Stmt::Print { expression } => {
-                let mut code = self.visit_expr(expression);
-                code.push(Bytecode::Print);
-                return code;
+                self.visit_expr(expression);
+                self.emit(Bytecode::Print);
             }
 
             Stmt::Return { value } => {
-                let mut code = vec![];
                 if let Some(expr) = value {
-                    code.extend(self.visit_expr(expr));
+                    self.visit_expr(expr);
                 } else {
-                    code.push(Bytecode::PushNull);
+                    self.emit(Bytecode::PushNull);
                 }
-                code.push(Bytecode::Return);
-                return code;
+                self.emit(Bytecode::Return);
             }
 
             Stmt::Var { name, initializer } => {
-                let mut code = vec![];
                 if let Some(init) = initializer {
-                    code.extend(self.visit_expr(init));
+                    self.visit_expr(init);
                 } else {
-                    code.push(Bytecode::PushNull);
+                    self.emit(Bytecode::PushNull);
                 }
-                code.push(Bytecode::StoreVar(name.clone()));
-                return code;
+                self.emit(Bytecode::StoreVar(name.clone()));
             }
 
             Stmt::While { condition, body } => {
-                let mut code = vec![];
+                let start_label = self.new_label();
+                let break_label = self.new_label();
 
-                let loop_start = code.len() as isize;
-                code.extend(self.visit_expr(condition));
+                self.place_label(start_label);
 
-                let jif_index = code.len();
-                code.push(Bytecode::JumpIfFalse(0));
+                self.visit_expr(condition);
+                self.emit_jump_if_false(break_label);
+
+                self.loop_stack.push(LoopContext { break_label, continue_label: start_label });
 
                 for stmt in body {
-                    code.extend(self.visit_stmt(stmt));
+                    self.visit_stmt(stmt);
                 }
 
-                let back_offset = (loop_start as isize) - (code.len() as isize) - 1;
-                code.push(Bytecode::Jump(back_offset));
+                self.emit_jump(start_label);
 
-                let loop_end = code.len() as isize;
-                if let Bytecode::JumpIfFalse(ref mut offset) = code[jif_index] {
-                    *offset = loop_end - (jif_index as isize);
+                self.loop_stack.pop();
+
+                self.place_label(break_label);
+            }
+        }
+    }
+
+    fn new_label(&mut self) -> LabelId {
+        let id = self.next_label_id;
+        self.next_label_id += 1;
+        return LabelId(id);
+    }
+
+    fn place_label(&mut self, label: LabelId) {
+        self.label_positions.insert(label, self.code.len());
+    }
+
+    fn emit_jump(&mut self, label: LabelId) {
+        let pos = self.code.len();
+        self.code.push(Bytecode::Jump(0));
+        self.unresolved_jumps.push((pos, label));
+    }
+
+    fn emit_jump_if_false(&mut self, label: LabelId) {
+        let pos = self.code.len();
+        self.code.push(Bytecode::JumpIfFalse(0));
+        self.unresolved_jumps.push((pos, label));
+    }
+
+    fn patch_jumps(&mut self) {
+        for (pos, label) in self.unresolved_jumps.drain(..) {
+            let target = *self.label_positions.get(&label).expect("Unplaced label");
+
+            match &mut self.code[pos] {
+                Bytecode::Jump(t) | Bytecode::JumpIfFalse(t) => {
+                    *t = target;
                 }
-
-                return code;
+                _ => unreachable!(),
             }
         }
     }

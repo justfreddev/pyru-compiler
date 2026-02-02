@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::value::LiteralType;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -16,19 +16,19 @@ pub enum BinaryOp {
     NotEq,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum LogicalOp {
     Or,
     And,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum UnaryOp {
     Not,
     Neg,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Binary {
         left: Box<Expr>,

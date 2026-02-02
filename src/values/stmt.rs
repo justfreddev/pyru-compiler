@@ -2,12 +2,14 @@ use std::fmt;
 
 use crate::{ expr::Expr };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     Assign {
         name: String,
         value: Box<Expr>,
     },
+    Break,
+    Continue,
     Decr {
         name: String,
     },
@@ -55,6 +57,8 @@ impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Stmt::Assign { name, value } => write!(f, "Assign({name} = {value}"),
+            Stmt::Break => write!(f, "Break"),
+            Stmt::Continue => write!(f, "Continue"),
             Stmt::Decr { name } => write!(f, "{name}--"),
             Stmt::Expression { expression } => write!(f, "Expression({expression})"),
             Stmt::For { initializer, condition, step, body } => {

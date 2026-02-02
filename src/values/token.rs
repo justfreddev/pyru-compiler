@@ -34,6 +34,8 @@ pub enum TokenKind {
     Num,
 
     And,
+    Break,
+    Continue,
     Def,
     Else,
     False,
@@ -145,6 +147,8 @@ impl fmt::Display for TokenKind {
             TokenKind::String => write!(f, "String"),
             TokenKind::Num => write!(f, "Num"),
             TokenKind::And => write!(f, "And"),
+            TokenKind::Break => write!(f, "Break"),
+            TokenKind::Continue => write!(f, "Continue"),
             TokenKind::Else => write!(f, "Else"),
             TokenKind::False => write!(f, "False"),
             TokenKind::For => write!(f, "For"),

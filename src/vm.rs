@@ -18,7 +18,7 @@ pub enum Value {
 
 #[derive(Debug)]
 struct CallFrame {
-    ip: isize,
+    ip: usize,
     bytecode: Rc<Vec<Bytecode>>,
     stack_base: usize,
     locals: HashMap<String, usize>,
@@ -29,7 +29,7 @@ pub struct VM {
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
     rte: HashMap<String, Value>,
-    ip: isize,
+    ip: usize,
 }
 
 impl VM {
@@ -44,7 +44,7 @@ impl VM {
     }
 
     pub fn execute(&mut self) {
-        while self.ip < (self.bytecode.len() as isize) {
+        while self.ip < self.bytecode.len() {
             let mut advance = true;
             // println!("\n\n\nStack: {:#?}", self.stack);
             // println!("RTE: {:#?}", self.rte);
@@ -231,7 +231,8 @@ impl VM {
                 }
 
                 Bytecode::Jump(n) => {
-                    self.ip += *n;
+                    self.ip = *n;
+                    advance = false;
                 }
                 Bytecode::JumpIfFalse(n) => {
                     if
@@ -240,7 +241,8 @@ impl VM {
                             .expect("Stack underflow when jumping if false")
                     {
                         if !x {
-                            self.ip += n;
+                            self.ip = *n;
+                            advance = false;
                         }
                     } else {
                         panic!("Jump if false value isn't a boolean");

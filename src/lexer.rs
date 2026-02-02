@@ -20,8 +20,8 @@ impl<'a> Lexer<'a> {
         let mut kw: HashMap<String, TokenKind> = HashMap::new();
         keywords!(
             kw;
-            And, Def, Else, False, For, If, In, Let, Not,
-            Null, Or, Print, Return, Step, True, While
+            And, Break, Continue, Def, Else, False, For, If, In,
+            Let, Not, Null, Or, Print, Return, Step, True, While
         );
         return Self {
             input: input.chars().peekable(),
