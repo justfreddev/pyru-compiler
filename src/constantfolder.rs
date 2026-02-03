@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     expr::{ BinaryOp, Expr, LogicalOp, UnaryOp },
-    semantics::SymbolInfo,
+    semanticanalyser::SymbolInfo,
     stmt::Stmt,
     value::Value,
 };

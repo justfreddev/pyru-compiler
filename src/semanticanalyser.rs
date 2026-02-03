@@ -14,12 +14,12 @@ pub struct SymbolInfo {
     pub constant: Option<Value>,
 }
 
-pub struct Semantics {
+pub struct SemanticAnalyser {
     sts: Vec<HashMap<String, SymbolInfo>>, // Symbol table stack
     loop_depth: usize,
 }
 
-impl Semantics {
+impl SemanticAnalyser {
     pub fn new() -> Self {
         return Self {
             sts: vec![HashMap::<String, SymbolInfo>::new()],

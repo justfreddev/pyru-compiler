@@ -1,24 +1,19 @@
 mod codegen;
 mod constantfolder;
-#[path = "./values/expr.rs"]
 mod expr;
 mod lexer;
-#[path = "./values/list.rs"]
 mod list;
 mod parser;
-mod semantics;
-#[path = "./values/stmt.rs"]
+mod semanticanalyser;
 mod stmt;
-#[path = "./values/token.rs"]
 mod token;
-#[path = "./values/value.rs"]
 mod value;
 mod vm;
 
 use codegen::{ Bytecode, CodeGen };
 use lexer::Lexer;
 use parser::Parser;
-use semantics::Semantics;
+use semanticanalyser::SemanticAnalyser;
 use vm::VM;
 use std::{ fs, io };
 
@@ -35,7 +30,7 @@ fn main() {
     let mut parser = Parser::new(tokens);
     let ast = parser.parse();
 
-    let mut semantics = Semantics::new();
+    let mut semantics = SemanticAnalyser::new();
     semantics.run(&ast);
 
     let mut codegen = CodeGen::new();
