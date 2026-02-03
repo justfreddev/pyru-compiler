@@ -1,5 +1,5 @@
 mod codegen;
-mod constantfolder;
+mod constprop;
 mod expr;
 mod lexer;
 mod list;
@@ -11,10 +11,13 @@ mod value;
 mod vm;
 
 use codegen::{ Bytecode, CodeGen };
+use constprop::ConstPropagator;
 use lexer::Lexer;
 use parser::Parser;
 use semanticanalyser::SemanticAnalyser;
+use stmt::Stmt;
 use vm::VM;
+
 use std::{ fs, io };
 
 fn main() {
@@ -33,8 +36,14 @@ fn main() {
     let mut semantics = SemanticAnalyser::new();
     semantics.run(&ast);
 
+    let mut constprop = ConstPropagator::new();
+    let propagated_ast: Vec<Stmt> = ast
+        .iter()
+        .map(|node| constprop.propagate_stmt(node))
+        .collect();
+
     let mut codegen = CodeGen::new();
-    let bytecode: Vec<Bytecode> = codegen.run(ast);
+    let bytecode: Vec<Bytecode> = codegen.run(propagated_ast);
 
     let mut vm = VM::new(bytecode);
     vm.execute();

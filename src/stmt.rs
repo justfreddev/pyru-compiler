@@ -75,7 +75,7 @@ impl fmt::Display for Stmt {
             }
             Stmt::Var { name, initializer } => {
                 if initializer.is_some() {
-                    return write!(f, "Var({name} {}", initializer.as_ref().unwrap());
+                    return write!(f, "Var({name}={})", initializer.as_ref().unwrap());
                 } else {
                     return write!(f, "Var({name})");
                 }

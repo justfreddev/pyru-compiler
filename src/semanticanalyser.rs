@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ constantfolder::ConstantFolder, expr::Expr, stmt::Stmt, value::Value };
+use crate::{ expr::Expr, stmt::Stmt, value::Value };
 
 enum ReturnStatus {
     Returns,
@@ -93,36 +93,11 @@ impl SemanticAnalyser {
     fn visit_stmt(&mut self, stmt: &Stmt) -> (Stmt, ReturnStatus) {
         match stmt {
             Stmt::Assign { name, value } => {
-                let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                let folded_value = folder.fold_expr(&**value);
-                if !self.is_declared(&name) {
+                if !self.is_declared(name) {
                     panic!("Cannot assign value to non-existent variable");
                 }
-                if let Expr::Literal(ref value) = folded_value {
-                    self.assign(name, Some(value.clone()));
-                } else {
-                    self.assign(name, None);
-                }
-
-                let folded_stmt = Stmt::Assign {
-                    name: name.clone(),
-                    value: Box::new(folded_value),
-                };
-                (folded_stmt, ReturnStatus::Continues)
-            }
-
-            Stmt::Break => {
-                if self.loop_depth == 0 {
-                    panic!("Break used outside of a loop");
-                }
-                (Stmt::Break, ReturnStatus::Returns)
-            }
-
-            Stmt::Continue => {
-                if self.loop_depth == 0 {
-                    panic!("Continue used outside of a loop");
-                }
-                (Stmt::Continue, ReturnStatus::Returns)
+                self.assign(name, None);
+                (Stmt::Assign { name: name.clone(), value: value.clone() }, ReturnStatus::Continues)
             }
 
             Stmt::Decr(name) => {
@@ -132,45 +107,31 @@ impl SemanticAnalyser {
                 (Stmt::Decr(name.clone()), ReturnStatus::Continues)
             }
 
-            Stmt::Expression(expression) => {
-                self.visit_expr(expression);
-                let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                let folded_expr = folder.fold_expr(&expression);
-                (Stmt::Expression(folded_expr), ReturnStatus::Continues)
+            Stmt::Expression(expr) => {
+                self.visit_expr(expr);
+                (Stmt::Expression(expr.clone()), ReturnStatus::Continues)
             }
 
             Stmt::For { initializer, condition, step, body } => {
-                self.visit_stmt(*&initializer);
-
+                self.visit_stmt(&*initializer);
                 let before_loop = self.sts.clone();
-
                 self.loop_depth += 1;
                 {
                     self.sts = before_loop.clone();
                     self.enter_scope();
                     self.visit_expr(condition);
                     self.visit_block(body);
-                    self.visit_stmt(*&step);
+                    self.visit_stmt(&*step);
                     self.exit_scope();
                 }
                 self.loop_depth -= 1;
                 self.sts = before_loop;
-
-                let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                let folded_initializer = Box::new(folder.fold_stmt(&**initializer));
-                let folded_condition = folder.fold_expr(condition);
-                let folded_step = Box::new(folder.fold_stmt(&**step));
-                let folded_body = body
-                    .iter()
-                    .map(|s| folder.fold_stmt(s))
-                    .collect();
-
                 (
                     Stmt::For {
-                        initializer: folded_initializer,
-                        condition: folded_condition,
-                        step: folded_step,
-                        body: folded_body,
+                        initializer: initializer.clone(),
+                        condition: condition.clone(),
+                        step: step.clone(),
+                        body: body.clone(),
                     },
                     ReturnStatus::Continues,
                 )
@@ -199,21 +160,14 @@ impl SemanticAnalyser {
                         constant: None,
                     });
                 }
-
                 let status = self.visit_block(body);
                 self.exit_scope();
-
-                let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                let folded_body = body
-                    .iter()
-                    .map(|s| folder.fold_stmt(s))
-                    .collect();
 
                 (
                     Stmt::Function {
                         name: name.clone(),
                         params: params.clone(),
-                        body: folded_body,
+                        body: body.clone(),
                     },
                     status,
                 )
@@ -221,7 +175,6 @@ impl SemanticAnalyser {
 
             Stmt::If { condition, then_branch, else_branch } => {
                 self.visit_expr(condition);
-
                 let before_if = self.sts.clone();
 
                 let then_status;
@@ -248,7 +201,6 @@ impl SemanticAnalyser {
                 };
 
                 self.sts = before_if;
-
                 for (i, scope) in self.sts.iter_mut().enumerate() {
                     let then_scope = &then_state[i];
                     let else_scope = &else_state[i];
@@ -264,24 +216,11 @@ impl SemanticAnalyser {
                     _ => ReturnStatus::Continues,
                 };
 
-                let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                let folded_conditon = folder.fold_expr(condition);
-                let folded_then = then_branch
-                    .iter()
-                    .map(|s| folder.fold_stmt(s))
-                    .collect();
-                let folded_else = else_branch.clone().map(|branch| {
-                    branch
-                        .iter()
-                        .map(|s| folder.fold_stmt(&s))
-                        .collect::<Vec<Stmt>>()
-                });
-
                 (
                     Stmt::If {
-                        condition: folded_conditon,
-                        then_branch: folded_then,
-                        else_branch: folded_else,
+                        condition: condition.clone(),
+                        then_branch: then_branch.clone(),
+                        else_branch: else_branch.clone(),
                     },
                     status,
                 )
@@ -294,59 +233,36 @@ impl SemanticAnalyser {
                 (Stmt::Incr(name.clone()), ReturnStatus::Continues)
             }
 
-            Stmt::Print(expression) => {
-                self.visit_expr(expression);
-
-                let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                let folded_expr = folder.fold_expr(expression);
-
-                (Stmt::Print(folded_expr), ReturnStatus::Continues)
+            Stmt::Print(expr) => {
+                self.visit_expr(expr);
+                (Stmt::Print(expr.clone()), ReturnStatus::Continues)
             }
 
             Stmt::Return(value) => {
                 if let Some(expr) = value {
                     self.visit_expr(expr);
-
-                    let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                    let folded_expr = folder.fold_expr(expr);
-
-                    (Stmt::Return(Some(folded_expr)), ReturnStatus::Returns)
+                    (Stmt::Return(Some(expr.clone())), ReturnStatus::Returns)
                 } else {
                     (Stmt::Return(None), ReturnStatus::Returns)
                 }
             }
 
             Stmt::Var { name, initializer } => {
-                let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                let folded_initializer = initializer.clone().map(|expr| folder.fold_expr(&expr));
-
-                let constant = folded_initializer.as_ref().and_then(|expr| {
-                    if let Expr::Literal(value) = expr { Some(value.clone()) } else { None }
-                });
-
+                let assigned = initializer.is_some();
                 let scope = self.sts.last_mut().expect("No scope available");
                 if scope.contains_key(name) {
                     panic!("Variable redefined in the same scope");
                 }
-
-                let assigned = folded_initializer.is_some();
-                scope.insert(name.clone(), SymbolInfo {
-                    declared: true,
-                    assigned,
-                    constant,
-                });
-
+                scope.insert(name.clone(), SymbolInfo { declared: true, assigned, constant: None });
                 (
-                    Stmt::Var { name: name.clone(), initializer: folded_initializer },
+                    Stmt::Var { name: name.clone(), initializer: initializer.clone() },
                     ReturnStatus::Continues,
                 )
             }
 
             Stmt::While { condition, body } => {
                 self.visit_expr(condition);
-
                 let before_loop = self.sts.clone();
-
                 self.loop_depth += 1;
                 {
                     self.sts = before_loop.clone();
@@ -356,41 +272,47 @@ impl SemanticAnalyser {
                 }
                 self.loop_depth -= 1;
                 self.sts = before_loop;
-
-                let folder = ConstantFolder::new(&self.sts.last().unwrap());
-                let folded_condition = folder.fold_expr(condition);
-                let folded_body = body
-                    .iter()
-                    .map(|s| folder.fold_stmt(s))
-                    .collect();
-
                 (
-                    Stmt::While { condition: folded_condition, body: folded_body },
+                    Stmt::While { condition: condition.clone(), body: body.clone() },
                     ReturnStatus::Continues,
                 )
+            }
+
+            Stmt::Break => {
+                if self.loop_depth == 0 {
+                    panic!("Break used outside of a loop");
+                }
+                (Stmt::Break, ReturnStatus::Returns)
+            }
+
+            Stmt::Continue => {
+                if self.loop_depth == 0 {
+                    panic!("Continue used outside of a loop");
+                }
+                (Stmt::Continue, ReturnStatus::Returns)
             }
         }
     }
     fn visit_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Binary { left, right, .. } => {
-                self.visit_expr(*&left);
-                self.visit_expr(*&right);
+                self.visit_expr(left);
+                self.visit_expr(right);
             }
 
             Expr::Call { callee, arguments } => {
-                self.visit_expr(*&callee);
+                self.visit_expr(callee);
                 for arg in arguments {
                     self.visit_expr(arg);
                 }
             }
 
-            Expr::Grouping(expression) => self.visit_expr(*&expression),
+            Expr::Grouping(e) => self.visit_expr(e),
 
             Expr::Index { list, index } => {
-                self.visit_expr(*&index);
-                if !self.is_assigned(&list) {
-                    panic!("Unassigned list being indexed")
+                self.visit_expr(index);
+                if !self.is_assigned(list) {
+                    panic!("Unassigned list being indexed");
                 }
             }
 
@@ -404,7 +326,6 @@ impl SemanticAnalyser {
                 for arg in arguments {
                     self.visit_expr(arg);
                 }
-
                 const LIST_METHODS: &[&str] = &[
                     "index",
                     "insertAt",
@@ -417,43 +338,40 @@ impl SemanticAnalyser {
                 if !LIST_METHODS.contains(&method_name.as_str()) {
                     panic!("Unknown list method: {}", method_name);
                 }
-
-                if !self.is_assigned(&object) {
-                    panic!("Method called on unassigned list")
+                if !self.is_assigned(object) {
+                    panic!("Method called on unassigned list");
                 }
             }
 
             Expr::Literal { .. } => {}
 
             Expr::Logical { left, right, .. } => {
-                self.visit_expr(*&left);
-                self.visit_expr(*&right);
+                self.visit_expr(left);
+                self.visit_expr(right);
             }
 
             Expr::Membership { left, right, .. } => {
-                self.visit_expr(*&left);
-                self.visit_expr(*&right);
+                self.visit_expr(left);
+                self.visit_expr(right);
             }
 
             Expr::Slice { list, start, end } => {
                 if let Some(e) = start {
-                    self.visit_expr(*&e);
+                    self.visit_expr(e);
                 }
                 if let Some(e) = end {
-                    self.visit_expr(*&e);
+                    self.visit_expr(e);
                 }
-
-                if !self.is_assigned(&list) {
-                    panic!("Undefined list being sliced")
+                if !self.is_assigned(list) {
+                    panic!("Undefined list being sliced");
                 }
             }
 
-            Expr::Unary { right, .. } => self.visit_expr(*&right),
+            Expr::Unary { right, .. } => self.visit_expr(right),
 
             Expr::Var(name) => {
-                if !self.is_assigned(&name) {
-                    println!("{name}");
-                    panic!("Unassigned variable in expression")
+                if !self.is_assigned(name) {
+                    panic!("Unassigned variable in expression");
                 }
             }
         }
