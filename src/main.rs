@@ -1,5 +1,6 @@
 mod codegen;
 mod constprop;
+mod dce;
 mod expr;
 mod lexer;
 mod list;
@@ -12,6 +13,7 @@ mod vm;
 
 use codegen::{ Bytecode, CodeGen };
 use constprop::ConstPropagator;
+use dce::DeadCodeEliminator;
 use lexer::Lexer;
 use parser::Parser;
 use semanticanalyser::SemanticAnalyser;
@@ -42,8 +44,11 @@ fn main() {
         .map(|node| constprop.propagate_stmt(node))
         .collect();
 
+    let mut dce = DeadCodeEliminator::new();
+    let dce_removed_ast: Vec<Stmt> = dce.eliminate(propagated_ast);
+
     let mut codegen = CodeGen::new();
-    let bytecode: Vec<Bytecode> = codegen.run(propagated_ast);
+    let bytecode: Vec<Bytecode> = codegen.run(dce_removed_ast);
 
     let mut vm = VM::new(bytecode);
     vm.execute();

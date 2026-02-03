@@ -82,7 +82,7 @@ impl SemanticAnalyser {
                     .position(|s| s == stmt)
                     .unwrap();
                 if idx + 1 < body.len() {
-                    panic!("Unreachable code after return");
+                    println!("Unreachable code after return");
                 }
                 return ReturnStatus::Returns;
             }
