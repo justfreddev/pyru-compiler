@@ -4,6 +4,7 @@ mod dce;
 mod expr;
 mod lexer;
 mod list;
+mod liveliness;
 mod parser;
 mod semanticanalyser;
 mod stmt;
@@ -15,6 +16,7 @@ use codegen::{ Bytecode, CodeGen };
 use constprop::ConstPropagator;
 use dce::DeadCodeEliminator;
 use lexer::Lexer;
+use liveliness::LivelinessOptimiser;
 use parser::Parser;
 use semanticanalyser::SemanticAnalyser;
 use stmt::Stmt;
@@ -47,8 +49,11 @@ fn main() {
     let mut dce = DeadCodeEliminator::new();
     let dce_removed_ast: Vec<Stmt> = dce.eliminate(propagated_ast);
 
+    let mut liveliness_optimiser = LivelinessOptimiser::new();
+    let final_ast = liveliness_optimiser.optimise_tree(dce_removed_ast);
+
     let mut codegen = CodeGen::new();
-    let bytecode: Vec<Bytecode> = codegen.run(dce_removed_ast);
+    let bytecode: Vec<Bytecode> = codegen.run(final_ast);
 
     let mut vm = VM::new(bytecode);
     vm.execute();
