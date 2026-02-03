@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{ expr::Expr };
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Assign {
         name: String,
@@ -10,12 +10,8 @@ pub enum Stmt {
     },
     Break,
     Continue,
-    Decr {
-        name: String,
-    },
-    Expression {
-        expression: Expr,
-    },
+    Decr(String),
+    Expression(Expr),
     For {
         initializer: Box<Stmt>,
         condition: Expr,
@@ -32,15 +28,9 @@ pub enum Stmt {
         then_branch: Vec<Stmt>,
         else_branch: Option<Vec<Stmt>>,
     },
-    Incr {
-        name: String,
-    },
-    Print {
-        expression: Expr,
-    },
-    Return {
-        value: Option<Expr>,
-    },
+    Incr(String),
+    Print(Expr),
+    Return(Option<Expr>),
     Var {
         name: String,
         initializer: Option<Expr>,
@@ -59,8 +49,8 @@ impl fmt::Display for Stmt {
             Stmt::Assign { name, value } => write!(f, "Assign({name} = {value}"),
             Stmt::Break => write!(f, "Break"),
             Stmt::Continue => write!(f, "Continue"),
-            Stmt::Decr { name } => write!(f, "{name}--"),
-            Stmt::Expression { expression } => write!(f, "Expression({expression})"),
+            Stmt::Decr(name) => write!(f, "{name}--"),
+            Stmt::Expression(expression) => write!(f, "Expression({expression})"),
             Stmt::For { initializer, condition, step, body } => {
                 return write!(f, "For({initializer:?} {condition} {step:?} {body:?})");
             }
@@ -78,9 +68,9 @@ impl fmt::Display for Stmt {
                     return write!(f, "If({condition} {then_branch:?})");
                 }
             }
-            Stmt::Incr { name } => write!(f, "{name}++"),
-            Stmt::Print { expression } => write!(f, "Print({expression})"),
-            Stmt::Return { value } => {
+            Stmt::Incr(name) => write!(f, "{name}++"),
+            Stmt::Print(expression) => write!(f, "Print({expression})"),
+            Stmt::Return(value) => {
                 return write!(f, "Return({value:?})");
             }
             Stmt::Var { name, initializer } => {

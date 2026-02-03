@@ -1,35 +1,36 @@
-use std::fmt;
+use std::{ cell::RefCell, fmt, rc::Rc };
 
-// #[derive(Clone, Debug, PartialEq, PartialOrd)]
-// pub enum Value {
-//     Literal(LiteralType),
-// }
+use crate::{ codegen::Bytecode, vm::VM };
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
-pub enum LiteralType {
-    Str(String),
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum Value {
     Num(f64),
-    True,
-    False,
+    Str(String),
+    Bool(bool),
     Null,
+    List(Rc<RefCell<Vec<Value>>>),
+    Function {
+        params: Vec<String>,
+        arity: usize,
+        body: Rc<Vec<Bytecode>>,
+    },
 }
 
-// impl fmt::Display for Value {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         return match self {
-//             Value::Literal(literal) => write!(f, "{literal}"),
-//         };
-//     }
-// }
-
-impl fmt::Display for LiteralType {
+impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return match self {
-            LiteralType::Str(s) => write!(f, "{s}"),
-            LiteralType::Num(n) => write!(f, "{n}"),
-            LiteralType::True => write!(f, "true"),
-            LiteralType::False => write!(f, "false"),
-            LiteralType::Null => write!(f, "null"),
+            Value::Num(n) => {
+                let mut text = n.to_string();
+                if text.ends_with(".0") {
+                    text.truncate(text.len() - 2);
+                }
+                write!(f, "{text}")
+            }
+            Value::Str(s) => write!(f, "{s}"),
+            Value::Bool(x) => write!(f, "{x}"),
+            Value::Null => write!(f, "null"),
+            Value::List(_) => write!(f, "{}", VM::stringify(self)),
+            Value::Function { .. } => todo!(),
         };
     }
 }

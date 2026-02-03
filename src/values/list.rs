@@ -1,6 +1,6 @@
 use std::{ cell::RefCell, rc::Rc };
 
-use crate::vm::Value;
+use crate::value::Value;
 
 pub fn call_list_method(list: Rc<RefCell<Vec<Value>>>, method: &str, args: Vec<Value>) -> Value {
     let mut borrowed = list.borrow_mut();

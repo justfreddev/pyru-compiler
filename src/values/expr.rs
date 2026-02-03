@@ -1,8 +1,8 @@
 use std::fmt;
 
-use crate::value::LiteralType;
+use crate::value::Value;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -16,19 +16,19 @@ pub enum BinaryOp {
     NotEq,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LogicalOp {
     Or,
     And,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum UnaryOp {
     Not,
     Neg,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Binary {
         left: Box<Expr>,
@@ -39,23 +39,18 @@ pub enum Expr {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
     },
-    Grouping {
-        expression: Box<Expr>,
-    },
+    Grouping(Box<Expr>),
     Index {
         list: String,
         index: Box<Expr>,
     },
-    List {
-        items: Vec<Expr>,
-    },
+    List(Vec<Expr>),
     ListMethodCall {
         object: String,
-        call: Box<Expr>,
+        method_name: String,
+        arguments: Vec<Expr>,
     },
-    Literal {
-        value: LiteralType,
-    },
+    Literal(Value),
     Logical {
         operator: LogicalOp,
         left: Box<Expr>,
@@ -75,9 +70,7 @@ pub enum Expr {
         operator: UnaryOp,
         right: Box<Expr>,
     },
-    Var {
-        name: String,
-    },
+    Var(String),
 }
 
 impl fmt::Display for BinaryOp {
@@ -124,11 +117,12 @@ impl fmt::Display for Expr {
                 write!(f, "Binary({left} {operator} {right})")
             }
             Expr::Call { callee, arguments } => write!(f, "Call({callee} {arguments:?})"),
-            Expr::Grouping { expression } => write!(f, "Grouping({expression})"),
+            Expr::Grouping(expression) => write!(f, "Grouping({expression})"),
             Expr::Index { list, index } => write!(f, "{list}[{index}]"),
-            Expr::List { items } => write!(f, "[{items:?}]"),
-            Expr::ListMethodCall { object, call } => write!(f, "{object}.{call}"),
-            Expr::Literal { value } => write!(f, "{value}"),
+            Expr::List(items) => write!(f, "{items:?}"),
+            Expr::ListMethodCall { object, method_name, arguments } =>
+                write!(f, "{object}.{method_name}({arguments:?})"),
+            Expr::Literal(value) => write!(f, "{value}"),
             Expr::Logical { left, operator, right } => {
                 write!(f, "Logical({left} {operator} {right})")
             }
@@ -140,7 +134,7 @@ impl fmt::Display for Expr {
             }
             Expr::Slice { list, start, end } => { write!(f, "{list}[{start:?}:{end:?}]") }
             Expr::Unary { operator, right } => write!(f, "Unary({operator} {right})"),
-            Expr::Var { name } => write!(f, "Var({name})"),
+            Expr::Var(name) => write!(f, "Var({name})"),
         };
     }
 }

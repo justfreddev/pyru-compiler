@@ -1,4 +1,5 @@
 mod codegen;
+mod constantfolder;
 #[path = "./values/expr.rs"]
 mod expr;
 mod lexer;
@@ -39,10 +40,6 @@ fn main() {
 
     let mut codegen = CodeGen::new();
     let bytecode: Vec<Bytecode> = codegen.run(ast);
-
-    for (i, bc) in bytecode.iter().enumerate() {
-        println!("{i}: {bc:?}");
-    }
 
     let mut vm = VM::new(bytecode);
     vm.execute();

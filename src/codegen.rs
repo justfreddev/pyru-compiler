@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ expr::{ BinaryOp, Expr, LogicalOp, UnaryOp }, stmt::{ Stmt }, value::LiteralType };
+use crate::{ expr::{ BinaryOp, Expr, LogicalOp, UnaryOp }, stmt::{ Stmt }, value::Value };
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 struct LabelId(usize);
@@ -126,7 +126,7 @@ impl CodeGen {
                 self.emit(Bytecode::Call(arguments.len()));
             }
 
-            Expr::Grouping { expression } => {
+            Expr::Grouping(expression) => {
                 self.visit_expr(expression);
             }
 
@@ -136,7 +136,7 @@ impl CodeGen {
                 self.emit(Bytecode::Index);
             }
 
-            Expr::List { items } => {
+            Expr::List(items) => {
                 for item in items.iter().rev() {
                     self.visit_expr(item);
                 }
@@ -144,33 +144,24 @@ impl CodeGen {
                 self.emit(Bytecode::MakeList(items.len()));
             }
 
-            Expr::ListMethodCall { object, call } => {
+            Expr::ListMethodCall { object, method_name, arguments } => {
                 self.emit(Bytecode::LoadVar(object.clone()));
 
-                match call.as_ref() {
-                    Expr::Call { callee, arguments } => {
-                        let method_name = match callee.as_ref() {
-                            Expr::Var { name } => name.clone(),
-                            _ => panic!("Invalid list method call"),
-                        };
-
-                        for arg in arguments {
-                            self.visit_expr(arg);
-                        }
-
-                        self.emit(Bytecode::ListMethodCall(method_name, arguments.len()));
-                    }
-                    _ => panic!("Unexpected call in ListMethodCall"),
+                for arg in arguments {
+                    self.visit_expr(arg);
                 }
+
+                self.emit(Bytecode::ListMethodCall(method_name.clone(), arguments.len()));
             }
 
-            Expr::Literal { value } => {
+            Expr::Literal(value) => {
                 match value {
-                    LiteralType::Num(n) => self.emit(Bytecode::PushNum(*n)),
-                    LiteralType::Str(s) => self.emit(Bytecode::PushStr(s.clone())),
-                    LiteralType::True => self.emit(Bytecode::PushBool(true)),
-                    LiteralType::False => self.emit(Bytecode::PushBool(false)),
-                    LiteralType::Null => self.emit(Bytecode::PushNull),
+                    Value::Num(n) => self.emit(Bytecode::PushNum(*n)),
+                    Value::Str(s) => self.emit(Bytecode::PushStr(s.clone())),
+                    Value::Bool(true) => self.emit(Bytecode::PushBool(true)),
+                    Value::Bool(false) => self.emit(Bytecode::PushBool(false)),
+                    Value::Null => self.emit(Bytecode::PushNull),
+                    _ => panic!("Value in literal not a literal value"),
                 }
             }
 
@@ -221,7 +212,7 @@ impl CodeGen {
                 self.emit(op_code);
             }
 
-            Expr::Var { name } => {
+            Expr::Var(name) => {
                 return self.emit(Bytecode::LoadVar(name.clone()));
             }
         }
@@ -246,14 +237,14 @@ impl CodeGen {
                 self.emit_jump(context.continue_label);
             }
 
-            Stmt::Decr { name } => {
+            Stmt::Decr(name) => {
                 self.emit(Bytecode::LoadVar(name.clone()));
                 self.emit(Bytecode::PushNum(-1.0));
                 self.emit(Bytecode::Add);
                 self.emit(Bytecode::StoreVar(name.clone()));
             }
 
-            Stmt::Expression { expression } => {
+            Stmt::Expression(expression) => {
                 self.visit_expr(expression);
                 if let Expr::ListMethodCall { object, .. } = expression {
                     self.emit(Bytecode::StoreVar(object.clone()));
@@ -345,19 +336,19 @@ impl CodeGen {
                 self.place_label(end_label);
             }
 
-            Stmt::Incr { name } => {
+            Stmt::Incr(name) => {
                 self.emit(Bytecode::LoadVar(name.clone()));
                 self.emit(Bytecode::PushNum(1.0));
                 self.emit(Bytecode::Add);
                 self.emit(Bytecode::StoreVar(name.clone()));
             }
 
-            Stmt::Print { expression } => {
+            Stmt::Print(expression) => {
                 self.visit_expr(expression);
                 self.emit(Bytecode::Print);
             }
 
-            Stmt::Return { value } => {
+            Stmt::Return(value) => {
                 if let Some(expr) = value {
                     self.visit_expr(expr);
                 } else {

@@ -2,7 +2,7 @@ use crate::{
     expr::{ BinaryOp, Expr, LogicalOp, UnaryOp },
     stmt::Stmt,
     token::{ Token, TokenKind },
-    value::LiteralType,
+    value::Value,
 };
 
 pub struct Parser {
@@ -129,19 +129,19 @@ impl Parser {
                 name: name.clone(),
                 value: Box::new(Expr::Binary {
                     operator: BinaryOp::Add,
-                    left: Box::new(Expr::Var { name: name.clone() }),
+                    left: Box::new(Expr::Var(name.clone())),
                     right: Box::new(value),
                 }),
             })
         } else {
-            Box::new(Stmt::Incr { name: name.clone() })
+            Box::new(Stmt::Incr(name.clone()))
         };
 
         let initializer = Stmt::Var { name: name.clone(), initializer: Some(start) };
 
         let condition = Expr::Binary {
             operator: BinaryOp::Less,
-            left: Box::new(Expr::Var { name }),
+            left: Box::new(Expr::Var(name)),
             right: Box::new(end),
         };
 
@@ -182,7 +182,7 @@ impl Parser {
         let expression = self.expression();
         self.consume(TokenKind::RParen);
         self.consume(TokenKind::Semicolon);
-        return Stmt::Print { expression };
+        return Stmt::Print(expression);
     }
 
     fn return_statement(&mut self) -> Stmt {
@@ -192,7 +192,7 @@ impl Parser {
         }
         self.consume(TokenKind::Semicolon);
 
-        return Stmt::Return { value };
+        return Stmt::Return(value);
     }
 
     fn while_statement(&mut self) -> Stmt {
@@ -213,11 +213,11 @@ impl Parser {
 
         if self.match_all(&[TokenKind::Incr]) {
             self.consume(TokenKind::Semicolon);
-            return Stmt::Incr { name };
+            return Stmt::Incr(name);
         }
         if self.match_all(&[TokenKind::Decr]) {
             self.consume(TokenKind::Semicolon);
-            return Stmt::Decr { name };
+            return Stmt::Decr(name);
         }
 
         if self.match_all(&[TokenKind::Equal]) {
@@ -421,14 +421,39 @@ impl Parser {
 
         loop {
             if self.match_all(&[TokenKind::LParen]) {
+                // Normal function call
                 expr = self.finish_call(expr);
             } else if self.match_all(&[TokenKind::Dot]) {
-                let call = self.call();
-                let name = match expr {
-                    Expr::Var { name } => name,
-                    _ => panic!("Can only call identifiers"),
+                // List method call
+                // Only allow if expr is a variable
+                let object = match expr {
+                    Expr::Var(ref name) => name.clone(),
+                    _ => panic!("Only variables can have list method calls"),
                 };
-                return Expr::ListMethodCall { object: name, call: Box::new(call) };
+
+                let method_name = self.consume(TokenKind::Identifier).span.literal.clone();
+
+                if self.match_all(&[TokenKind::LParen]) {
+                    // Parse arguments using a simplified inline version
+                    let mut args = Vec::new();
+                    if !self.check(TokenKind::RParen) {
+                        loop {
+                            args.push(self.expression());
+                            if !self.match_all(&[TokenKind::Comma]) {
+                                break;
+                            }
+                        }
+                    }
+                    self.consume(TokenKind::RParen);
+
+                    expr = Expr::ListMethodCall {
+                        object: object,
+                        method_name,
+                        arguments: args,
+                    };
+                } else {
+                    panic!("Expected '(' after method name for list method call");
+                }
             } else {
                 break;
             }
@@ -463,27 +488,27 @@ impl Parser {
 
     fn primary(&mut self) -> Expr {
         if self.match_all(&[TokenKind::True]) {
-            return Expr::Literal { value: LiteralType::True };
+            return Expr::Literal(Value::Bool(true));
         }
         if self.match_all(&[TokenKind::False]) {
-            return Expr::Literal { value: LiteralType::False };
+            return Expr::Literal(Value::Bool(false));
         }
         if self.match_all(&[TokenKind::Null]) {
-            return Expr::Literal { value: LiteralType::Null };
+            return Expr::Literal(Value::Null);
         }
 
         if self.match_all(&[TokenKind::Num, TokenKind::String]) {
             let value = self.previous().span.literal.clone();
             match self.previous().kind {
                 TokenKind::String => {
-                    return Expr::Literal { value: LiteralType::Str(value) };
+                    return Expr::Literal(Value::Str(value));
                 }
                 TokenKind::Num => {
                     let n = match self.previous().span.literal.trim().parse() {
                         Ok(v) => v,
                         Err(_) => panic!("Unable to parse literal to float"),
                     };
-                    return Expr::Literal { value: LiteralType::Num(n) };
+                    return Expr::Literal(Value::Num(n));
                 }
                 _ => panic!("Expected a string or a number for a literal"),
             }
@@ -514,7 +539,7 @@ impl Parser {
 
                 Expr::Slice { list: name, start, end }
             } else {
-                Expr::Var { name }
+                Expr::Var(name)
             };
             return expr;
         }
@@ -522,7 +547,7 @@ impl Parser {
         if self.match_all(&[TokenKind::LParen]) {
             let expr = self.expression();
             self.consume(TokenKind::RParen);
-            return Expr::Grouping { expression: Box::new(expr) };
+            return Expr::Grouping(Box::new(expr));
         }
 
         if self.match_all(&[TokenKind::LBrack]) {
@@ -539,7 +564,7 @@ impl Parser {
 
             self.consume(TokenKind::RBrack);
 
-            return Expr::List { items };
+            return Expr::List(items);
         }
 
         println!("{}", self.tokens[self.current]);
@@ -551,7 +576,7 @@ impl Parser {
 
         self.consume(TokenKind::Semicolon);
 
-        return Stmt::Expression { expression: expr };
+        return Stmt::Expression(expr);
     }
 
     fn match_all(&mut self, types: &[TokenKind]) -> bool {

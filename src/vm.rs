@@ -1,20 +1,6 @@
-use std::{ cell::RefCell, collections::HashMap, fmt, rc::Rc };
+use std::{ cell::RefCell, collections::HashMap, rc::Rc };
 
-use crate::{ codegen::Bytecode, list::{ call_list_method } };
-
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum Value {
-    Num(f64),
-    Str(String),
-    Bool(bool),
-    Null,
-    List(Rc<RefCell<Vec<Value>>>),
-    Function {
-        params: Vec<String>,
-        arity: usize,
-        body: Rc<Vec<Bytecode>>,
-    },
-}
+use crate::{ codegen::Bytecode, list::call_list_method, value::Value };
 
 #[derive(Debug)]
 struct CallFrame {
@@ -438,25 +424,6 @@ impl VM {
                 text
             }
             _ => panic!("Unable to stringify value"),
-        };
-    }
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        return match self {
-            Value::Num(n) => {
-                let mut text = n.to_string();
-                if text.ends_with(".0") {
-                    text.truncate(text.len() - 2);
-                }
-                write!(f, "{text}")
-            }
-            Value::Str(s) => write!(f, "{s}"),
-            Value::Bool(x) => write!(f, "{x}"),
-            Value::Null => write!(f, "null"),
-            Value::List(_) => write!(f, "{}", VM::stringify(self)),
-            Value::Function { .. } => todo!(),
         };
     }
 }
