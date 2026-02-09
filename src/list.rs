@@ -123,9 +123,14 @@ fn calc_min_run(len: f32) -> usize {
 fn insertion_sort(mut list: Vec<Value>, left: usize, right: usize) -> Vec<Value> {
     for i in left + 1..=right {
         let mut j = i;
-        while j > left && list[j] < list[j - 1] {
-            list.swap(j, j - 1);
-            j -= 1;
+        match (list[j].clone(), list[j - 1].clone()) {
+            (Value::Num(a), Value::Num(b)) => {
+                while j > left && a < b {
+                    list.swap(j, j - 1);
+                    j -= 1;
+                }
+            }
+            _ => panic!("Unable to sort a list of non-numbers"),
         }
     }
     return list;

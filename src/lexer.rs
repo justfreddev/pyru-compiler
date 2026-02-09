@@ -1,5 +1,6 @@
 use std::{ collections::HashMap, iter::Peekable, str::Chars };
 
+use crate::error::{ CompileError, LexerError, Result };
 use crate::token::{ TextSpan, Token, TokenKind };
 
 use crate::keywords;
@@ -11,6 +12,7 @@ pub struct Lexer<'a> {
     is_new_line: bool,
     indented: bool,
     indent: usize,
+    curr: usize,
     pos: usize,
     kw: HashMap<String, TokenKind>,
 }
@@ -28,6 +30,7 @@ impl<'a> Lexer<'a> {
             tokens: vec![],
             line: 1,
             pos: 1,
+            curr: 1,
             kw,
             is_new_line: false,
             indent: 0,
@@ -35,32 +38,31 @@ impl<'a> Lexer<'a> {
         };
     }
 
-    pub fn tokenise(mut self) -> Vec<Token> {
-        let mut curr_pos: usize = 0;
+    pub fn tokenise(mut self) -> Result<Vec<Token>> {
         while let Some(c) = self.input.next() {
-            curr_pos = self.pos;
+            self.curr = self.pos;
             self.pos += 1;
 
             self.handle_indents();
 
             match c {
-                '(' => self.push_token(TokenKind::LParen, curr_pos),
-                ')' => self.push_token(TokenKind::RParen, curr_pos),
-                '{' => self.push_token(TokenKind::LBrace, curr_pos),
-                '}' => self.push_token(TokenKind::RBrace, curr_pos),
-                '[' => self.push_token(TokenKind::LBrack, curr_pos),
-                ']' => self.push_token(TokenKind::RBrack, curr_pos),
-                ',' => self.push_token(TokenKind::Comma, curr_pos),
-                ';' => self.push_token(TokenKind::Semicolon, curr_pos),
-                ':' => self.push_token(TokenKind::Colon, curr_pos),
-                '*' => self.push_token(TokenKind::Asterisk, curr_pos),
+                '(' => self.push_token(TokenKind::LParen, self.curr),
+                ')' => self.push_token(TokenKind::RParen, self.curr),
+                '{' => self.push_token(TokenKind::LBrace, self.curr),
+                '}' => self.push_token(TokenKind::RBrace, self.curr),
+                '[' => self.push_token(TokenKind::LBrack, self.curr),
+                ']' => self.push_token(TokenKind::RBrack, self.curr),
+                ',' => self.push_token(TokenKind::Comma, self.curr),
+                ';' => self.push_token(TokenKind::Semicolon, self.curr),
+                ':' => self.push_token(TokenKind::Colon, self.curr),
+                '*' => self.push_token(TokenKind::Asterisk, self.curr),
                 '.' => {
                     let kind = if self.check_next('.') {
                         TokenKind::DotDot
                     } else {
                         TokenKind::Dot
                     };
-                    self.push_token(kind, curr_pos);
+                    self.push_token(kind, self.curr);
                 }
                 '-' => {
                     let kind = if self.check_next('-') {
@@ -68,11 +70,11 @@ impl<'a> Lexer<'a> {
                     } else {
                         TokenKind::Minus
                     };
-                    self.push_token(kind, curr_pos);
+                    self.push_token(kind, self.curr);
                 }
                 '+' => {
                     let kind = if self.check_next('+') { TokenKind::Incr } else { TokenKind::Plus };
-                    self.push_token(kind, curr_pos);
+                    self.push_token(kind, self.curr);
                 }
                 '!' => {
                     let kind = if self.check_next('=') {
@@ -80,7 +82,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         TokenKind::Bang
                     };
-                    self.push_token(kind, curr_pos);
+                    self.push_token(kind, self.curr);
                 }
                 '=' => {
                     let kind = if self.check_next('=') {
@@ -88,7 +90,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         TokenKind::Equal
                     };
-                    self.push_token(kind, curr_pos);
+                    self.push_token(kind, self.curr);
                 }
                 '<' => {
                     let kind = if self.check_next('=') {
@@ -96,7 +98,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         TokenKind::Less
                     };
-                    self.push_token(kind, curr_pos);
+                    self.push_token(kind, self.curr);
                 }
                 '>' => {
                     let kind = if self.check_next('=') {
@@ -104,7 +106,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         TokenKind::Greater
                     };
-                    self.push_token(kind, curr_pos);
+                    self.push_token(kind, self.curr);
                 }
                 '\r' => {
                     while self.check_next('\n') {}
@@ -135,24 +137,29 @@ impl<'a> Lexer<'a> {
                             }
                         }
                     } else {
-                        self.push_token(TokenKind::FSlash, curr_pos);
+                        self.push_token(TokenKind::FSlash, self.curr);
                     }
                 }
 
                 '"' => {
-                    let literal = self.consume_string();
-                    self.push_literal_token(TokenKind::String, literal, curr_pos);
+                    let literal = self.consume_string()?;
+                    self.push_literal_token(TokenKind::String, literal, self.curr);
                 }
 
                 _ => {
                     if self.is_digit(Some(c)) {
                         let n = self.consume_number(c);
-                        self.push_literal_token(TokenKind::Num, n.to_string(), curr_pos);
+                        self.push_literal_token(TokenKind::Num, n.to_string(), self.curr);
                     } else if self.is_alpha(Some(c)) {
                         let (kind, literal) = self.consume_identifier(c);
-                        self.push_literal_token(kind, literal.unwrap_or_default(), curr_pos);
+                        self.push_literal_token(kind, literal.unwrap_or_default(), self.curr);
                     } else {
-                        panic!("UNEXPECTED SYMBOL");
+                        return Err(
+                            CompileError::Lexer(LexerError::UnexpectedSymbol {
+                                line: self.pos,
+                                symbol: c,
+                            })
+                        );
                     }
                 }
             }
@@ -163,10 +170,14 @@ impl<'a> Lexer<'a> {
         }
 
         self.tokens.push(
-            Token::new(TokenKind::Eof, TextSpan::new(curr_pos, self.pos, "".to_string()), self.line)
+            Token::new(
+                TokenKind::Eof,
+                TextSpan::new(self.curr, self.pos, "".to_string()),
+                self.line
+            )
         );
 
-        return self.tokens;
+        return Ok(self.tokens);
     }
 
     fn push_token(&mut self, kind: TokenKind, curr_pos: usize) {
@@ -190,7 +201,7 @@ impl<'a> Lexer<'a> {
         return false;
     }
 
-    fn consume_string(&mut self) -> String {
+    fn consume_string(&mut self) -> Result<String> {
         let mut string: Vec<char> = vec![];
         let mut terminated = false;
         while self.input.peek().is_some() && !terminated {
@@ -201,20 +212,22 @@ impl<'a> Lexer<'a> {
                     break;
                 }
                 if c == '\n' {
-                    panic!("UNTERMINATED STRING");
+                    return Err(
+                        CompileError::Lexer(LexerError::UnterminatedString { line: self.line })
+                    );
                 }
                 string.push(c);
             }
         }
 
         if !terminated {
-            panic!("UNTERMINATED STRING");
+            return Err(CompileError::Lexer(LexerError::UnterminatedString { line: self.line }));
         }
 
-        return String::from_iter(string);
+        return Ok(String::from_iter(string));
     }
 
-    fn handle_indents(&mut self) {
+    fn handle_indents(&mut self) -> Result<()> {
         const TABSIZE: i32 = 4;
 
         if self.is_new_line {
@@ -233,7 +246,12 @@ impl<'a> Lexer<'a> {
             let indent_count = if col % TABSIZE == 0 {
                 (col / TABSIZE) as usize
             } else {
-                panic!("Incorrect indentation error, col: {col}");
+                return Err(
+                    CompileError::Lexer(LexerError::InvalidIndentation {
+                        line: self.line,
+                        col: self.pos,
+                    })
+                );
             };
 
             if indent_count > self.indent {
@@ -256,6 +274,7 @@ impl<'a> Lexer<'a> {
             self.indent = indent_count;
             self.is_new_line = false;
         }
+        Ok(())
     }
 
     fn consume_number(&mut self, first_digit: char) -> f64 {

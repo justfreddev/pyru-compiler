@@ -22,6 +22,7 @@ pub enum Stmt {
         name: String,
         params: Vec<String>,
         body: Vec<Stmt>,
+        captures: Vec<String>,
     },
     If {
         condition: Expr,
@@ -54,8 +55,8 @@ impl fmt::Display for Stmt {
             Stmt::For { initializer, condition, step, body } => {
                 return write!(f, "For({initializer:?} {condition} {step:?} {body:?})");
             }
-            Stmt::Function { name, params, body } => {
-                return write!(f, "Function({name} {params:?} {body:?})");
+            Stmt::Function { name, params, body, captures } => {
+                return write!(f, "Function({name} {params:?} {body:?} {captures:?})");
             }
             Stmt::If { condition, then_branch, else_branch } => {
                 if else_branch.is_some() {

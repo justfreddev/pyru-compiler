@@ -57,7 +57,7 @@ pub enum TokenKind {
     Dedent,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TextSpan {
     pub start: usize,
     pub end: usize,

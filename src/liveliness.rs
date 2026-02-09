@@ -92,7 +92,7 @@ impl LivelinessOptimiser {
                 })
             }
 
-            Stmt::Function { name, params, body } => {
+            Stmt::Function { name, params, body, .. } => {
                 let outer_live_vars = self.live_vars.clone();
 
                 self.live_vars = HashSet::new();
@@ -105,13 +105,21 @@ impl LivelinessOptimiser {
 
                 self.live_vars.remove(&name);
 
-                if !self.live_vars.is_empty() {
-                    panic!("Undefined variables used: {:?}", self.live_vars);
-                }
+                // if !self.live_vars.is_empty() {
+                //     panic!("Undefined variables used: {:?}", self.live_vars);
+                // }
+
+                let captured = self.live_vars.clone();
 
                 self.live_vars = outer_live_vars;
+                self.live_vars.extend(captured.iter().cloned());
 
-                Some(Stmt::Function { name, params, body: opt_body })
+                Some(Stmt::Function {
+                    name,
+                    params,
+                    body: opt_body,
+                    captures: captured.into_iter().collect(),
+                })
             }
 
             Stmt::If { condition, then_branch, else_branch } => {

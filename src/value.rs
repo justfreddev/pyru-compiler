@@ -1,8 +1,10 @@
-use std::{ cell::RefCell, fmt, rc::Rc };
+use std::{ cell::RefCell, collections::HashMap, fmt, rc::Rc };
 
 use crate::{ codegen::Bytecode, vm::VM };
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub type Env = Rc<RefCell<HashMap<String, Value>>>;
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Num(f64),
     Str(String),
@@ -13,6 +15,7 @@ pub enum Value {
         params: Vec<String>,
         arity: usize,
         body: Rc<Vec<Bytecode>>,
+        env: Env,
     },
 }
 

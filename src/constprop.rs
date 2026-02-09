@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{ HashMap, HashSet };
 
 use crate::{ expr::{ BinaryOp, Expr, LogicalOp, UnaryOp }, stmt::Stmt, value::Value };
 
@@ -6,11 +6,12 @@ type ConstEnv = HashMap<String, Option<Value>>;
 
 pub struct ConstPropagator {
     env: ConstEnv,
+    mutated_in_loop: HashSet<String>,
 }
 
 impl ConstPropagator {
     pub fn new() -> Self {
-        Self { env: HashMap::new() }
+        Self { env: HashMap::new(), mutated_in_loop: HashSet::new() }
     }
 
     fn eval_nums(&self, l: &f64, r: &f64, op: &BinaryOp) -> Value {
@@ -73,26 +74,33 @@ impl ConstPropagator {
 
             Stmt::For { initializer, condition, step, body } => {
                 let folded_initializer = self.propagate_stmt(&*initializer);
+
+                let mut mutated_vars = HashSet::new();
+                for stmt in body.iter().chain(std::iter::once(step.as_ref())) {
+                    match stmt {
+                        Stmt::Incr(name) | Stmt::Decr(name) | Stmt::Assign { name, .. } => {
+                            mutated_vars.insert(name.clone());
+                        }
+                        _ => {}
+                    }
+                }
+
+                let saved_mutated = self.mutated_in_loop.clone();
+                self.mutated_in_loop.extend(mutated_vars);
+
                 let folded_condition = self.propagate_expr(condition);
 
-                let mut before_loop_env = self.env.clone();
-
-                let mut temp_env = self.env.clone();
-                std::mem::swap(&mut self.env, &mut temp_env);
-
                 let folded_step = self.propagate_stmt(&*step);
-                let folded_body = body
+                let folded_body: Vec<Stmt> = body
                     .iter()
                     .map(|s| self.propagate_stmt(s))
                     .collect();
 
-                for (name, value) in self.env.iter() {
-                    if before_loop_env.get(name) != Some(value) {
-                        before_loop_env.insert(name.clone(), None);
-                    }
+                for var in &self.mutated_in_loop {
+                    self.env.insert(var.clone(), None);
                 }
 
-                self.env = before_loop_env;
+                self.mutated_in_loop = saved_mutated;
 
                 Stmt::For {
                     initializer: Box::new(folded_initializer),
@@ -102,7 +110,7 @@ impl ConstPropagator {
                 }
             }
 
-            Stmt::Function { name, params, body } => {
+            Stmt::Function { name, params, body, .. } => {
                 let before_func_env = self.env.clone();
 
                 self.env = HashMap::new();
@@ -118,7 +126,12 @@ impl ConstPropagator {
 
                 self.env = before_func_env;
 
-                Stmt::Function { name: name.clone(), params: params.clone(), body: folded_body }
+                Stmt::Function {
+                    name: name.clone(),
+                    params: params.clone(),
+                    body: folded_body,
+                    captures: vec![],
+                }
             }
 
             Stmt::If { condition, then_branch, else_branch } => {
@@ -219,25 +232,31 @@ impl ConstPropagator {
             }
 
             Stmt::While { condition, body } => {
+                let mut mutated_vars = HashSet::new();
+                for stmt in body.iter() {
+                    match stmt {
+                        Stmt::Incr(name) | Stmt::Decr(name) | Stmt::Assign { name, .. } => {
+                            mutated_vars.insert(name.clone());
+                        }
+                        _ => {}
+                    }
+                }
+
+                let saved_mutated = self.mutated_in_loop.clone();
+                self.mutated_in_loop.extend(mutated_vars);
+
                 let folded_condition = self.propagate_expr(condition);
-
-                let mut before_loop_env = self.env.clone();
-
-                let mut temp_env = self.env.clone();
-                std::mem::swap(&mut self.env, &mut temp_env);
 
                 let folded_body: Vec<Stmt> = body
                     .iter()
                     .map(|s| self.propagate_stmt(s))
                     .collect();
 
-                for (name, value) in self.env.iter() {
-                    if before_loop_env.get(name) != Some(value) {
-                        before_loop_env.insert(name.clone(), None);
-                    }
+                for var in &self.mutated_in_loop {
+                    self.env.insert(var.clone(), None);
                 }
 
-                self.env = before_loop_env;
+                self.mutated_in_loop = saved_mutated;
 
                 Stmt::While {
                     condition: folded_condition,
@@ -328,10 +347,10 @@ impl ConstPropagator {
             }
 
             Expr::Var(name) => {
-                if let Some(Some(val)) = self.env.get(name) {
-                    Expr::Literal(val.clone())
-                } else {
-                    Expr::Var(name.clone())
+                match self.env.get(name) {
+                    Some(Some(val)) if !self.mutated_in_loop.contains(name) =>
+                        Expr::Literal(val.clone()),
+                    _ => Expr::Var(name.clone()),
                 }
             }
 

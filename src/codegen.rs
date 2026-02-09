@@ -43,7 +43,7 @@ pub enum Bytecode {
     JumpIfFalse(usize), // pop stack; jump if false
 
     // Function
-    Function(String, Vec<String>, Vec<Bytecode>),
+    Function(String, Vec<String>, Vec<String>, Vec<Bytecode>),
     Call(usize), // call function by name, with N args
     Return,
 
@@ -282,7 +282,7 @@ impl CodeGen {
                 self.place_label(break_label);
             }
 
-            Stmt::Function { name, params, body } => {
+            Stmt::Function { name, params, body, captures } => {
                 let outer_code = std::mem::take(&mut self.code);
                 let outer_labels = std::mem::take(&mut self.label_positions);
                 let outer_unresolved = std::mem::take(&mut self.unresolved_jumps);
@@ -298,6 +298,7 @@ impl CodeGen {
                 }
 
                 self.emit(Bytecode::PushNull);
+                self.emit(Bytecode::Return);
 
                 self.patch_jumps();
 
@@ -308,7 +309,9 @@ impl CodeGen {
                 self.unresolved_jumps = outer_unresolved;
                 self.loop_stack = outer_loop_stack;
 
-                self.emit(Bytecode::Function(name.clone(), params.clone(), fn_code));
+                self.emit(
+                    Bytecode::Function(name.clone(), params.clone(), captures.clone(), fn_code)
+                );
                 self.emit(Bytecode::StoreVar(name.clone()));
             }
 

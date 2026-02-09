@@ -56,11 +56,12 @@ impl DeadCodeEliminator {
                     }
                 }
 
-                Stmt::Function { name, params, body } =>
+                Stmt::Function { name, params, body, captures } =>
                     Stmt::Function {
                         name,
                         params,
                         body: self.eliminate(body),
+                        captures,
                     },
 
                 Stmt::For { initializer, condition, step, body } =>

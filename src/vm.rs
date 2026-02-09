@@ -1,6 +1,11 @@
 use std::{ cell::RefCell, collections::HashMap, rc::Rc };
 
-use crate::{ codegen::Bytecode, list::call_list_method, value::Value };
+use crate::{
+    codegen::Bytecode,
+    error::CompileError,
+    list::call_list_method,
+    value::{ Env, Value },
+};
 
 #[derive(Debug)]
 struct CallFrame {
@@ -8,6 +13,7 @@ struct CallFrame {
     bytecode: Rc<Vec<Bytecode>>,
     stack_base: usize,
     locals: HashMap<String, usize>,
+    env: Env,
 }
 
 pub struct VM {
@@ -29,7 +35,9 @@ impl VM {
         };
     }
 
-    pub fn execute(&mut self) {
+    pub fn execute(&mut self, testing: bool) -> Result<Vec<Value>, CompileError> {
+        let mut output: Vec<Value> = Vec::new();
+
         while self.ip < self.bytecode.len() {
             let mut advance = true;
             // println!("\n\n\nStack: {:#?}", self.stack);
@@ -48,36 +56,43 @@ impl VM {
                 }
 
                 Bytecode::LoadVar(name) => {
+                    let mut res = None;
                     if let Some(frame) = self.frames.last() {
                         if let Some(&offset) = frame.locals.get(name) {
-                            let value = self.stack[frame.stack_base + offset].clone();
-                            self.stack.push(value);
-                        } else {
-                            let value = self.rte
-                                .get(name)
-                                .unwrap_or_else(|| panic!("Undefined variable {}", name));
-                            self.stack.push(value.clone());
+                            res = Some(self.stack[frame.stack_base + offset].clone());
+                        } else if let Some(value) = frame.env.borrow().get(name) {
+                            res = Some(value.clone());
                         }
-                    } else {
-                        let value = self.rte
-                            .get(name)
-                            .unwrap_or_else(|| panic!("Undefined variable {}", name));
-                        self.stack.push(value.clone());
                     }
+
+                    if res.is_none() {
+                        res = self.rte.get(name).cloned();
+                    }
+
+                    let value = res.unwrap_or_else(|| panic!("Undefined variable {}", name));
+
+                    self.stack.push(value);
                 }
                 Bytecode::StoreVar(name) => {
                     let value = self.stack
                         .pop()
                         .expect("Stack underflow when storing variable value");
 
+                    let mut stored = false;
+
                     if let Some(frame) = self.frames.last() {
                         if let Some(&offset) = frame.locals.get(name) {
-                            self.stack[frame.stack_base + offset] = value;
-                            return;
+                            self.stack[frame.stack_base + offset] = value.clone();
+                            stored = true;
+                        } else if frame.env.borrow().contains_key(name) {
+                            frame.env.borrow_mut().insert(name.clone(), value.clone());
+                            stored = true;
                         }
                     }
 
-                    self.rte.insert(name.clone(), value);
+                    if !stored {
+                        self.rte.insert(name.clone(), value);
+                    }
                 }
 
                 Bytecode::Add => {
@@ -235,19 +250,44 @@ impl VM {
                     }
                 }
 
-                Bytecode::Function(_, params, body) => {
+                Bytecode::Function(_, params, captures, body) => {
+                    let mut env = HashMap::new();
+
+                    for name in captures {
+                        if let Some(frame) = self.frames.last() {
+                            if let Some(&offset) = frame.locals.get(name) {
+                                env.insert(
+                                    name.clone(),
+                                    self.stack[frame.stack_base + offset].clone()
+                                );
+                                continue;
+                            }
+
+                            if let Some(v) = frame.env.borrow().get(name) {
+                                env.insert(name.clone(), v.clone());
+                                continue;
+                            }
+                        }
+
+                        if let Some(v) = self.rte.get(name) {
+                            env.insert(name.clone(), v.clone());
+                        }
+                    }
+
                     let func = Value::Function {
                         params: params.clone(),
                         arity: params.len(),
                         body: Rc::new(body.clone()),
+                        env: Rc::new(RefCell::new(env)),
                     };
+
                     self.stack.push(func);
                 }
                 Bytecode::Call(argc) => {
                     let func_index = self.stack.len() - argc - 1;
                     let func = self.stack.remove(func_index);
 
-                    let Value::Function { params, arity, body } = func else {
+                    let Value::Function { params, arity, body, env } = func else {
                         println!("{}", func);
                         panic!("Attempted to call non-function");
                     };
@@ -266,6 +306,7 @@ impl VM {
                         bytecode: Rc::clone(&self.bytecode),
                         stack_base: self.stack.len() - argc,
                         locals,
+                        env: Rc::clone(&env),
                     };
                     self.frames.push(frame);
                     self.bytecode = Rc::clone(&body);
@@ -286,13 +327,17 @@ impl VM {
 
                 Bytecode::Print => {
                     let val = self.stack.pop().expect("Stack underflow when printing");
-                    match val {
-                        Value::Str(s) => println!("{s}"),
-                        Value::Num(_) => println!("{}", VM::stringify(&val)),
-                        Value::Bool(_) => println!("{}", VM::stringify(&val)),
-                        Value::Null => println!("null"),
-                        Value::List(_) => println!("{}", val),
-                        _ => panic!("Can't print function"),
+                    if testing {
+                        output.push(val);
+                    } else {
+                        match val {
+                            Value::Str(s) => println!("{s}"),
+                            Value::Num(_) => println!("{}", VM::stringify(&val)),
+                            Value::Bool(_) => println!("{}", VM::stringify(&val)),
+                            Value::Null => println!("null"),
+                            Value::List(_) => println!("{}", val),
+                            _ => panic!("Can't print function"),
+                        }
                     }
                 }
 
@@ -395,6 +440,12 @@ impl VM {
             if advance {
                 self.ip += 1;
             }
+        }
+
+        if testing {
+            return Ok(output);
+        } else {
+            return Ok(vec![]);
         }
     }
 
