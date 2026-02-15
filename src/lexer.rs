@@ -43,7 +43,7 @@ impl<'a> Lexer<'a> {
             self.curr = self.pos;
             self.pos += 1;
 
-            self.handle_indents();
+            self.handle_indents()?;
 
             match c {
                 '(' => self.push_token(TokenKind::LParen, self.curr),
@@ -116,14 +116,14 @@ impl<'a> Lexer<'a> {
                     self.line += 1;
                     self.is_new_line = true;
                     self.pos = 0;
-                    self.handle_indents();
+                    self.handle_indents()?;
                 }
 
                 '\n' => {
                     self.line += 1;
                     self.is_new_line = true;
                     self.pos = 0;
-                    self.handle_indents();
+                    self.handle_indents()?;
                 }
                 ' ' | '\t' => {}
                 '/' => {
