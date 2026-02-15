@@ -1,3 +1,4 @@
+mod cfg;
 mod codegen;
 mod constprop;
 mod dce;
@@ -27,7 +28,7 @@ use vm::VM;
 
 use std::{ fs, io };
 use error::{ Result };
-use crate::value::Value;
+use crate::{ cfg::{ CFGBuilder, FunctionCFG }, value::Value };
 
 fn main() {
     // let mut file_name_input = String::new();
@@ -58,6 +59,9 @@ pub fn execute_from_source(source: &str, testing: bool) -> Result<Vec<Value>> {
 
     let mut semantics = SemanticAnalyser::new();
     semantics.run(&ast)?;
+
+    let cfg = FunctionCFG::from_ast("main".to_string(), ast.clone());
+    cfg.print();
 
     let mut constprop = ConstPropagator::new();
     let propagated_ast: Vec<Stmt> = ast
