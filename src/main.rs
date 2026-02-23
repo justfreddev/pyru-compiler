@@ -1,4 +1,6 @@
 mod cfg;
+mod cfg_constprop;
+mod cfg_constfolding;
 mod cfg_liveliness;
 mod codegen;
 mod constprop;
@@ -29,7 +31,13 @@ use vm::VM;
 
 use std::{ fs };
 use error::{ Result };
-use crate::{ cfg::{ FunctionCFG }, cfg_liveliness::Liveliness, value::Value };
+use crate::{
+    cfg::FunctionCFG,
+    cfg_constfolding::ConstFolding,
+    cfg_constprop::ConstPropagation,
+    cfg_liveliness::Liveliness,
+    value::Value,
+};
 
 fn main() {
     // let mut file_name_input = String::new();
@@ -57,11 +65,18 @@ pub fn execute_from_source(source: &str, testing: bool) -> Result<Vec<Value>> {
     semantics.run(&ast)?;
 
     let mut cfg = FunctionCFG::from_ast("main".to_string(), ast.clone());
-    cfg.print();
+
+    let constpropagation = ConstPropagation::new();
+    let (in_map, out_map) = constpropagation.compute_constants(&cfg);
+    constpropagation.rewrite_with_constants(&mut cfg, &in_map);
+
+    let constfolding = ConstFolding::new(out_map);
+    constfolding.fold_cfg(&mut cfg);
 
     let liveliness = Liveliness::new();
     liveliness.eliminate_dead_assignments(&mut cfg);
 
+    cfg.clean_up();
     cfg.print();
 
     let mut constprop = ConstPropagator::new();

@@ -27,7 +27,7 @@ impl Liveliness {
                     Stmt::Assign { name, value } => {
                         // Variable is dead
                         if !live.contains(name) {
-                            if self.expr_has_side_effects(value) {
+                            if expr_has_side_effects(value) {
                                 *stmt = Stmt::Expression((**value).clone());
                             } else {
                                 dead_stmt_indexes.insert(i);
@@ -48,7 +48,7 @@ impl Liveliness {
                     Stmt::Var { name, initializer } => {
                         if !live.contains(name) {
                             if let Some(expr) = initializer {
-                                if self.expr_has_side_effects(expr) {
+                                if expr_has_side_effects(expr) {
                                     *stmt = Stmt::Expression((*expr).clone());
                                 } else {
                                     dead_stmt_indexes.insert(i);
@@ -294,49 +294,47 @@ impl Liveliness {
 
         return out;
     }
+}
 
-    fn expr_has_side_effects(&self, expr: &Expr) -> bool {
-        match expr {
-            Expr::Call { .. } | Expr::ListMethodCall { .. } => true,
+pub fn expr_has_side_effects(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call { .. } | Expr::ListMethodCall { .. } => true,
 
-            | Expr::Binary { left, right, .. }
-            | Expr::Logical { left, right, .. }
-            | Expr::Membership { left, right, .. } => {
-                self.expr_has_side_effects(left) || self.expr_has_side_effects(right)
-            }
-
-            Expr::Unary { right, .. } | Expr::Grouping(right) => {
-                self.expr_has_side_effects(right)
-            }
-
-            Expr::List(items) => {
-                for item in items {
-                    if self.expr_has_side_effects(item) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            Expr::Index { index, .. } => { self.expr_has_side_effects(index) }
-
-            Expr::Slice { start, end, .. } => {
-                if let Some(expr) = start {
-                    if self.expr_has_side_effects(expr) {
-                        return true;
-                    }
-                }
-
-                if let Some(expr) = end {
-                    if self.expr_has_side_effects(expr) {
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-
-            Expr::Var(_) | Expr::Literal(_) => false,
+        | Expr::Binary { left, right, .. }
+        | Expr::Logical { left, right, .. }
+        | Expr::Membership { left, right, .. } => {
+            expr_has_side_effects(left) || expr_has_side_effects(right)
         }
+
+        Expr::Unary { right, .. } | Expr::Grouping(right) => { expr_has_side_effects(right) }
+
+        Expr::List(items) => {
+            for item in items {
+                if expr_has_side_effects(item) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        Expr::Index { index, .. } => { expr_has_side_effects(index) }
+
+        Expr::Slice { start, end, .. } => {
+            if let Some(expr) = start {
+                if expr_has_side_effects(expr) {
+                    return true;
+                }
+            }
+
+            if let Some(expr) = end {
+                if expr_has_side_effects(expr) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        Expr::Var(_) | Expr::Literal(_) => false,
     }
 }

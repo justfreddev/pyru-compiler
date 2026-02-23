@@ -8,7 +8,7 @@ pub type BlockId = usize;
 pub struct BasicBlock {
     pub id: BlockId,
     pub stmts: Vec<Stmt>,
-    terminator: Option<Terminator>,
+    pub terminator: Option<Terminator>,
 }
 
 impl BasicBlock {
@@ -24,7 +24,7 @@ impl BasicBlock {
 }
 
 #[derive(Debug)]
-enum Terminator {
+pub enum Terminator {
     Goto(BlockId),
     Branch {
         cond: Expr,
@@ -47,7 +47,24 @@ impl FunctionCFG {
         return builder.build_function(name, body);
     }
 
-    fn compute_predecessors(&self) -> Vec<Vec<BlockId>> {
+    pub fn clean_up(&mut self) {
+        let mut visited = HashSet::new();
+        let mut stack = vec![self.entry];
+
+        while let Some(block_id) = stack.pop() {
+            if visited.insert(block_id) {
+                if let Some(block) = self.blocks.iter().find(|b| b.id == block_id) {
+                    for succ in block.successors() {
+                        stack.push(succ);
+                    }
+                }
+            }
+        }
+
+        self.blocks.retain(|b| visited.contains(&b.id));
+    }
+
+    pub fn compute_predecessors(&self) -> Vec<Vec<BlockId>> {
         let mut preds: Vec<Vec<BlockId>> = vec![vec![]; self.blocks.len()];
 
         for (idx, block) in self.blocks.iter().enumerate() {
@@ -58,7 +75,21 @@ impl FunctionCFG {
             }
         }
 
-        preds
+        return preds;
+    }
+
+    pub fn compute_block_predecessors(&self, id: BlockId) -> Vec<BlockId> {
+        let mut preds: Vec<BlockId> = Vec::new();
+
+        for block in &self.blocks {
+            for succ in block.successors() {
+                if succ == id {
+                    preds.push(block.id);
+                }
+            }
+        }
+
+        return preds;
     }
 
     pub fn compute_dominators(&self) -> Vec<HashSet<BlockId>> {
