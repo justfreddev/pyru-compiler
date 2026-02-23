@@ -1,4 +1,5 @@
 mod cfg;
+mod cfg_liveliness;
 mod codegen;
 mod constprop;
 mod dce;
@@ -26,9 +27,9 @@ use semanticanalyser::SemanticAnalyser;
 use stmt::Stmt;
 use vm::VM;
 
-use std::{ fs, io };
+use std::{ fs };
 use error::{ Result };
-use crate::{ cfg::{ CFGBuilder, FunctionCFG }, value::Value };
+use crate::{ cfg::{ FunctionCFG }, cfg_liveliness::Liveliness, value::Value };
 
 fn main() {
     // let mut file_name_input = String::new();
@@ -52,15 +53,15 @@ pub fn execute_from_source(source: &str, testing: bool) -> Result<Vec<Value>> {
     let mut parser = Parser::new(tokens);
     let ast = parser.parse()?;
 
-    println!("------ ORIGINAL -------");
-    for node in &ast {
-        println!("{node}");
-    }
-
     let mut semantics = SemanticAnalyser::new();
     semantics.run(&ast)?;
 
-    let cfg = FunctionCFG::from_ast("main".to_string(), ast.clone());
+    let mut cfg = FunctionCFG::from_ast("main".to_string(), ast.clone());
+    cfg.print();
+
+    let liveliness = Liveliness::new();
+    liveliness.eliminate_dead_assignments(&mut cfg);
+
     cfg.print();
 
     let mut constprop = ConstPropagator::new();

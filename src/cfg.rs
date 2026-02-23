@@ -1,10 +1,13 @@
+use std::collections::HashSet;
+
 use crate::{ expr::Expr, stmt::Stmt, value::Value };
 
-type BlockId = usize;
+pub type BlockId = usize;
 
 #[derive(Debug)]
 pub struct BasicBlock {
-    stmts: Vec<Stmt>,
+    pub id: BlockId,
+    pub stmts: Vec<Stmt>,
     terminator: Option<Terminator>,
 }
 
@@ -35,7 +38,7 @@ pub struct FunctionCFG {
     name: String,
     entry: BlockId,
     exit: BlockId,
-    blocks: Vec<BasicBlock>,
+    pub blocks: Vec<BasicBlock>,
 }
 
 impl FunctionCFG {
@@ -44,7 +47,7 @@ impl FunctionCFG {
         return builder.build_function(name, body);
     }
 
-    pub fn compute_predecessors(&self) -> Vec<Vec<BlockId>> {
+    fn compute_predecessors(&self) -> Vec<Vec<BlockId>> {
         let mut preds: Vec<Vec<BlockId>> = vec![vec![]; self.blocks.len()];
 
         for (idx, block) in self.blocks.iter().enumerate() {
@@ -56,6 +59,46 @@ impl FunctionCFG {
         }
 
         preds
+    }
+
+    pub fn compute_dominators(&self) -> Vec<HashSet<BlockId>> {
+        let n = self.blocks.len();
+        let preds = self.compute_predecessors();
+
+        let mut dom: Vec<HashSet<BlockId>> = vec![HashSet::new(); n];
+
+        for i in 0..n {
+            if i == self.entry {
+                dom[i].insert(self.entry); // Entry block dominates itself
+            } else {
+                dom[i] = (0..n).collect(); // Each block is initially dominated by all other blocks
+            }
+        }
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for b in 0..n {
+                if b == self.entry {
+                    continue;
+                }
+
+                let mut new_dom = (0..n).collect::<HashSet<BlockId>>();
+                for &p in &preds[b] {
+                    new_dom = new_dom.intersection(&dom[p]).copied().collect();
+                }
+
+                new_dom.insert(b);
+
+                if new_dom != dom[b] {
+                    dom[b] = new_dom;
+                    changed = true;
+                }
+            }
+        }
+
+        return dom;
     }
 
     pub fn print(&self) {
@@ -140,6 +183,7 @@ impl CFGBuilder {
     fn new_block(&mut self) -> BlockId {
         let id = self.blocks.len();
         self.blocks.push(BasicBlock {
+            id,
             stmts: vec![],
             terminator: None,
         });
