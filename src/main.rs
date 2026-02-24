@@ -15,11 +15,14 @@ mod test;
 mod token;
 mod value;
 mod vm;
+mod api;
 
 use lexer::Lexer;
 use parser::Parser;
 use semanticanalyser::SemanticAnalyser;
 use vm::VM;
+use actix_web::{ web, App, HttpServer };
+use actix_cors::Cors;
 
 use std::{ fs };
 use error::{ Result };
@@ -32,19 +35,20 @@ use crate::{
     value::Value,
 };
 
-fn main() {
-    // let mut file_name_input = String::new();
-    // io::stdin().read_line(&mut file_name_input).expect("Failed to read file name");
-    // let file_name = file_name_input.trim_end().to_string();
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    println!("Starting Pyru Compiler API on http://127.0.0.1:8080");
+    println!("POST /compile - Compile source code");
+    println!("GET /health - Health check");
 
-    let contents = fs::read_to_string("test.pr").unwrap();
-
-    match execute_from_source(contents.as_str(), false) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("{}", e);
-        }
-    }
+    HttpServer::new(|| {
+        App::new()
+            .wrap(Cors::default().allow_any_origin().allow_any_method().allow_any_header())
+            .route("/health", web::get().to(api::health_check))
+            .route("/compile", web::post().to(api::compile))
+    })
+        .bind("127.0.0.1:8080")?
+        .run().await
 }
 
 pub fn execute_from_source(source: &str, testing: bool) -> Result<Vec<Value>> {
