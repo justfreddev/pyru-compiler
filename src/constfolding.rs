@@ -92,7 +92,6 @@ impl ConstFolding {
         match expr {
             Expr::Binary { left, operator, right } => {
                 self.fold_expr(left, env);
-                println!("{left} {operator} {right}");
                 self.fold_expr(right, env);
 
                 if let (Expr::Literal(l), Expr::Literal(r)) = (&**left, &**right) {

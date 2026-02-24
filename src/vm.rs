@@ -1,11 +1,6 @@
 use std::{ cell::RefCell, collections::HashMap, rc::Rc };
 
-use crate::{
-    codgen::Bytecode,
-    error::CompileError,
-    list::call_list_method,
-    value::{ Env, Value },
-};
+use crate::{ codgen::Bytecode, error::CompileError, list::call_list_method, value::{ Env, Value } };
 
 #[derive(Debug)]
 struct CallFrame {
@@ -112,6 +107,7 @@ impl VM {
 
                     match (a, b) {
                         (Value::Num(x), Value::Num(y)) => self.stack.push(Value::Num(x + y)),
+                        (Value::Str(x), Value::Str(y)) => self.stack.push(Value::Str(x + &y)),
                         _ => panic!("Type error in Add"),
                     };
                 }
