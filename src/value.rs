@@ -1,6 +1,6 @@
 use std::{ cell::RefCell, collections::HashMap, fmt, rc::Rc };
 
-use crate::{ codegen::Bytecode, vm::VM };
+use crate::{ codgen::Bytecode, vm::VM };
 
 pub type Env = Rc<RefCell<HashMap<String, Value>>>;
 

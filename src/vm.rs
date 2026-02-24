@@ -1,7 +1,7 @@
 use std::{ cell::RefCell, collections::HashMap, rc::Rc };
 
 use crate::{
-    codegen::Bytecode,
+    codgen::Bytecode,
     error::CompileError,
     list::call_list_method,
     value::{ Env, Value },
@@ -26,11 +26,22 @@ pub struct VM {
 
 impl VM {
     pub fn new(bytecode: Vec<Bytecode>) -> Self {
+        let mut rte = HashMap::new();
+        rte.insert("__ret".to_string(), Value::Null);
+
+        let entry_frame = CallFrame {
+            ip: bytecode.len(),
+            bytecode: Rc::new(bytecode.clone()),
+            stack_base: 0,
+            locals: HashMap::new(),
+            env: Rc::new(RefCell::new(HashMap::new())),
+        };
+
         return Self {
             bytecode: Rc::new(bytecode),
             stack: vec![],
-            frames: vec![],
-            rte: HashMap::new(),
+            frames: vec![entry_frame],
+            rte,
             ip: 0,
         };
     }

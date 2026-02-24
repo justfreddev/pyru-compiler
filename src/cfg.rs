@@ -1,10 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{ HashMap, HashSet };
 
 use crate::{ expr::Expr, stmt::Stmt, value::Value };
 
 pub type BlockId = usize;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BasicBlock {
     pub id: BlockId,
     pub stmts: Vec<Stmt>,
@@ -23,7 +23,7 @@ impl BasicBlock {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Terminator {
     Goto(BlockId),
     Branch {
@@ -34,17 +34,21 @@ pub enum Terminator {
     Return(Option<Expr>),
 }
 
+#[derive(Clone)]
 pub struct FunctionCFG {
     name: String,
+    pub params: Vec<String>,
+    pub captures: Vec<String>,
     entry: BlockId,
     exit: BlockId,
     pub blocks: Vec<BasicBlock>,
+    pub nested_functions: HashMap<String, FunctionCFG>,
 }
 
 impl FunctionCFG {
     pub fn from_ast(name: String, body: Vec<Stmt>) -> Self {
         let builder = CFGBuilder::new();
-        return builder.build_function(name, body);
+        return builder.build_function(name, vec![], vec![], body);
     }
 
     pub fn clean_up(&mut self) {
@@ -64,7 +68,7 @@ impl FunctionCFG {
         self.blocks.retain(|b| visited.contains(&b.id));
     }
 
-    pub fn compute_predecessors(&self) -> Vec<Vec<BlockId>> {
+    fn compute_predecessors(&self) -> Vec<Vec<BlockId>> {
         let mut preds: Vec<Vec<BlockId>> = vec![vec![]; self.blocks.len()];
 
         for (idx, block) in self.blocks.iter().enumerate() {
@@ -137,8 +141,8 @@ impl FunctionCFG {
         println!("Entry: {}", self.entry);
         println!("--------------------------------");
 
-        for (idx, block) in self.blocks.iter().enumerate() {
-            println!("Block {}:", idx);
+        for block in &self.blocks {
+            println!("Block {}:", block.id);
 
             println!("    successors: {:?}", block.successors());
 
@@ -173,7 +177,7 @@ pub struct CFGBuilder {
     exit_block: BlockId,
     break_stack: Vec<BlockId>,
     continue_stack: Vec<BlockId>,
-    functions: Vec<FunctionCFG>,
+    nested_functions: HashMap<String, FunctionCFG>,
 }
 
 impl CFGBuilder {
@@ -185,14 +189,25 @@ impl CFGBuilder {
             exit_block: 0,
             break_stack: vec![],
             continue_stack: vec![],
-            functions: vec![],
+            nested_functions: HashMap::new(),
         };
     }
 
-    pub fn build_function(mut self, name: String, body: Vec<Stmt>) -> FunctionCFG {
+    pub fn build_function(
+        mut self,
+        name: String,
+        params: Vec<String>,
+        captures: Vec<String>,
+        body: Vec<Stmt>
+    ) -> FunctionCFG {
         let entry = self.new_block();
         self.entry = entry;
         self.curr_block = entry;
+
+        self.emit_stmt(Stmt::Var {
+            name: "__ret".to_string(),
+            initializer: Some(Expr::Literal(Value::Null)),
+        });
 
         let exit = self.new_block();
         self.exit_block = exit;
@@ -202,13 +217,25 @@ impl CFGBuilder {
         }
 
         if self.is_current_block_open() {
+            self.emit_stmt(Stmt::Assign {
+                name: "__ret".to_string(),
+                value: Box::new(Expr::Literal(Value::Null)),
+            });
             self.end_block(Terminator::Goto(exit));
         }
 
         self.set_current(exit);
-        self.end_block(Terminator::Return(None));
+        self.end_block(Terminator::Return(Some(Expr::Var("__ret".to_string()))));
 
-        return FunctionCFG { name, entry, exit, blocks: self.blocks };
+        return FunctionCFG {
+            name,
+            params,
+            captures,
+            entry,
+            exit,
+            blocks: self.blocks,
+            nested_functions: std::mem::take(&mut self.nested_functions),
+        };
     }
 
     fn new_block(&mut self) -> BlockId {
@@ -309,17 +336,16 @@ impl CFGBuilder {
                 self.set_current(exit_bb);
             }
             Stmt::Function { name, params, body, captures } => {
-                self.emit_stmt(Stmt::Function {
-                    name: name.clone(),
-                    params,
-                    body: vec![],
-                    captures,
-                });
-
                 let fn_builder = CFGBuilder::new();
-                let func_cfg = fn_builder.build_function(name, body);
+                let func_cfg = fn_builder.build_function(
+                    name.clone(),
+                    params.clone(),
+                    captures.clone(),
+                    body
+                );
 
-                self.functions.push(func_cfg)
+                self.nested_functions.insert(name.clone(), func_cfg);
+                self.emit_stmt(Stmt::Function { name, params, body: vec![], captures });
             }
             Stmt::If { condition, then_branch, else_branch } => {
                 let then_bb = self.new_block();
@@ -355,10 +381,7 @@ impl CFGBuilder {
                 self.set_current(join_bb);
             }
             Stmt::Return(expr) => {
-                let ret_expr = match expr {
-                    Some(e) => e,
-                    None => Expr::Literal(Value::Null),
-                };
+                let ret_expr = expr.unwrap_or(Expr::Literal(Value::Null));
 
                 self.emit_stmt(Stmt::Assign {
                     name: "__ret".to_string(),

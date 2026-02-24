@@ -1,360 +1,319 @@
 use std::collections::{ HashMap, HashSet };
 
-use crate::{ expr::{ BinaryOp, Expr, LogicalOp, UnaryOp }, stmt::Stmt, value::Value };
+use crate::{
+    cfg::{ BasicBlock, BlockId, FunctionCFG },
+    liveliness,
+    expr::{ BinaryOp, Expr, LogicalOp, UnaryOp },
+    stmt::Stmt,
+    value::Value,
+};
 
-type ConstEnv = HashMap<String, Option<Value>>;
-
-pub struct ConstPropagator {
-    env: ConstEnv,
-    mutated_in_loop: HashSet<String>,
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConstValue {
+    Undef,
+    Const(Value),
+    Nac, // Not a constant
 }
 
-impl ConstPropagator {
+pub type ConstEnv = HashMap<String, ConstValue>;
+
+pub struct ConstProp;
+
+impl ConstProp {
     pub fn new() -> Self {
-        Self { env: HashMap::new(), mutated_in_loop: HashSet::new() }
+        return Self;
     }
 
-    fn eval_nums(&self, l: &f64, r: &f64, op: &BinaryOp) -> Value {
-        match op {
-            BinaryOp::Add => Value::Num(l + r),
-            BinaryOp::Sub => Value::Num(l - r),
-            BinaryOp::Mul => Value::Num(l * r),
-            BinaryOp::Div => Value::Num(l / r),
-            BinaryOp::Eq => Value::Bool(l == r),
-            BinaryOp::NotEq => Value::Bool(l != r),
-            BinaryOp::Less => Value::Bool(l < r),
-            BinaryOp::LessEq => Value::Bool(l <= r),
-            BinaryOp::Greater => Value::Bool(l > r),
-            BinaryOp::GreaterEq => Value::Bool(l >= r),
+    pub fn rewrite_with_constants(
+        &self,
+        cfg: &mut FunctionCFG,
+        in_map: &HashMap<BlockId, ConstEnv>
+    ) {
+        for block in &mut cfg.blocks {
+            let env = &in_map[&block.id];
+
+            for stmt in &mut block.stmts {
+                self.rewrite_stmt(stmt, env);
+            }
         }
     }
 
-    fn eval_bools(&self, l: &bool, r: &bool, op: &LogicalOp) -> Value {
-        match op {
-            LogicalOp::And => Value::Bool(*l && *r),
-            LogicalOp::Or => Value::Bool(*l || *r),
-        }
-    }
-
-    pub fn propagate_stmt(&mut self, stmt: &Stmt) -> Stmt {
+    fn rewrite_stmt(&self, stmt: &mut Stmt, env: &ConstEnv) {
         match stmt {
-            Stmt::Assign { name, value } => {
-                let new_value = self.propagate_expr(&*value);
+            Stmt::Expression(value) | Stmt::Print(value) => self.rewrite_expr(value, env),
 
-                match &new_value {
-                    Expr::Literal(v) => {
-                        self.env.insert(name.clone(), Some(v.clone()));
-                    }
-                    _ => {
-                        self.env.insert(name.clone(), None);
-                    }
-                }
+            Stmt::Assign { value, .. } => self.rewrite_expr(value, env),
 
-                Stmt::Assign { name: name.clone(), value: Box::new(new_value) }
-            }
+            Stmt::Var { initializer: Some(value), .. } => self.rewrite_expr(value, env),
 
-            Stmt::Decr(name) => {
-                match self.env.get(name) {
-                    Some(Some(Value::Num(n))) => {
-                        self.env.insert(name.clone(), Some(Value::Num(n - 1.0)));
-                    }
-                    _ => {
-                        self.env.insert(name.clone(), None);
-                    }
-                }
-
-                Stmt::Decr(name.clone())
-            }
-
-            Stmt::Expression(expr) => {
-                let folded_expr = self.propagate_expr(expr);
-
-                Stmt::Expression(folded_expr)
-            }
-
-            Stmt::For { initializer, condition, step, body } => {
-                let folded_initializer = self.propagate_stmt(&*initializer);
-
-                let mut mutated_vars = HashSet::new();
-                for stmt in body.iter().chain(std::iter::once(step.as_ref())) {
-                    match stmt {
-                        Stmt::Incr(name) | Stmt::Decr(name) | Stmt::Assign { name, .. } => {
-                            mutated_vars.insert(name.clone());
-                        }
-                        _ => {}
-                    }
-                }
-
-                let saved_mutated = self.mutated_in_loop.clone();
-                self.mutated_in_loop.extend(mutated_vars);
-
-                let folded_condition = self.propagate_expr(condition);
-
-                let folded_step = self.propagate_stmt(&*step);
-                let folded_body: Vec<Stmt> = body
-                    .iter()
-                    .map(|s| self.propagate_stmt(s))
-                    .collect();
-
-                for var in &self.mutated_in_loop {
-                    self.env.insert(var.clone(), None);
-                }
-
-                self.mutated_in_loop = saved_mutated;
-
-                Stmt::For {
-                    initializer: Box::new(folded_initializer),
-                    condition: folded_condition,
-                    step: Box::new(folded_step),
-                    body: folded_body,
-                }
-            }
-
-            Stmt::Function { name, params, body, .. } => {
-                let before_func_env = self.env.clone();
-
-                self.env = HashMap::new();
-
-                for param in params {
-                    self.env.insert(param.clone(), None);
-                }
-
-                let folded_body = body
-                    .iter()
-                    .map(|s| self.propagate_stmt(s))
-                    .collect();
-
-                self.env = before_func_env;
-
-                Stmt::Function {
-                    name: name.clone(),
-                    params: params.clone(),
-                    body: folded_body,
-                    captures: vec![],
-                }
-            }
+            Stmt::Return(Some(value)) => self.rewrite_expr(value, env),
 
             Stmt::If { condition, then_branch, else_branch } => {
-                let folded_condition = self.propagate_expr(&condition);
-
-                let before_if_env = self.env.clone();
-
-                let mut then_env = self.env.clone();
-                self.env = then_env;
-                let folded_then = then_branch
-                    .into_iter()
-                    .map(|s| self.propagate_stmt(s))
-                    .collect();
-                then_env = self.env.clone();
-
-                let folded_else = if let Some(else_branch) = else_branch {
-                    let mut else_env = self.env.clone();
-                    self.env = else_env;
-                    let folded_else_branch: Vec<Stmt> = else_branch
-                        .iter()
-                        .map(|s| self.propagate_stmt(s))
-                        .collect();
-                    else_env = self.env.clone();
-                    self.env = before_if_env.clone();
-                    Some(folded_else_branch)
-                } else {
-                    self.env = before_if_env.clone();
-                    None
-                };
-
-                if let Some(_) = &else_branch {
-                    for (name, _) in before_if_env.iter() {
-                        let then_val = then_env.get(name);
-                        let else_val = self.env.get(name);
-                        let merged = match (then_val, else_val) {
-                            (Some(Some(v1)), Some(Some(v2))) if v1 == v2 => Some(v1.clone()),
-                            _ => None,
-                        };
-                        self.env.insert(name.clone(), merged);
-                    }
-                } else {
-                    for (name, then_val) in then_env.iter() {
-                        if then_val.is_some() {
-                            self.env.insert(name.clone(), None);
-                        }
+                self.rewrite_expr(condition, env);
+                for s in then_branch {
+                    self.rewrite_stmt(s, env);
+                }
+                if let Some(else_branch) = else_branch {
+                    for s in else_branch {
+                        self.rewrite_stmt(s, env);
                     }
                 }
-
-                Stmt::If {
-                    condition: folded_condition,
-                    then_branch: folded_then,
-                    else_branch: folded_else,
-                }
             }
 
-            Stmt::Incr(name) => {
-                match self.env.get(name) {
-                    Some(Some(Value::Num(n))) => {
-                        self.env.insert(name.clone(), Some(Value::Num(n + 1.0)));
-                    }
-                    _ => {
-                        self.env.insert(name.clone(), None);
-                    }
-                }
-
-                Stmt::Incr(name.clone())
-            }
-
-            Stmt::Print(expr) => {
-                let folded_expr = self.propagate_expr(expr);
-                Stmt::Print(folded_expr)
-            }
-
-            Stmt::Return(v) => {
-                if let Some(expr) = v {
-                    let folded_expr = self.propagate_expr(expr);
-                    Stmt::Return(Some(folded_expr))
-                } else {
-                    Stmt::Return(None)
+            Stmt::While { condition, body } | Stmt::For { condition, body, .. } => {
+                self.rewrite_expr(condition, env);
+                for s in body {
+                    self.rewrite_stmt(s, env);
                 }
             }
-
-            Stmt::Var { name, initializer } => {
-                let folded_initializer = initializer.as_ref().map(|e| self.propagate_expr(e));
-
-                let constant = if let Some(Expr::Literal(v)) = folded_initializer.as_ref() {
-                    Some(v.clone())
-                } else {
-                    None
-                };
-
-                self.env.insert(name.clone(), constant);
-
-                Stmt::Var {
-                    name: name.clone(),
-                    initializer: folded_initializer,
-                }
-            }
-
-            Stmt::While { condition, body } => {
-                let mut mutated_vars = HashSet::new();
-                for stmt in body.iter() {
-                    match stmt {
-                        Stmt::Incr(name) | Stmt::Decr(name) | Stmt::Assign { name, .. } => {
-                            mutated_vars.insert(name.clone());
-                        }
-                        _ => {}
-                    }
-                }
-
-                let saved_mutated = self.mutated_in_loop.clone();
-                self.mutated_in_loop.extend(mutated_vars);
-
-                let folded_condition = self.propagate_expr(condition);
-
-                let folded_body: Vec<Stmt> = body
-                    .iter()
-                    .map(|s| self.propagate_stmt(s))
-                    .collect();
-
-                for var in &self.mutated_in_loop {
-                    self.env.insert(var.clone(), None);
-                }
-
-                self.mutated_in_loop = saved_mutated;
-
-                Stmt::While {
-                    condition: folded_condition,
-                    body: folded_body,
-                }
-            }
-
-            _ => stmt.clone(),
+            _ => {}
         }
     }
 
-    fn propagate_expr(&mut self, expr: &Expr) -> Expr {
+    fn rewrite_expr(&self, expr: &mut Expr, env: &ConstEnv) {
         match expr {
-            Expr::Binary { left, operator, right } => {
-                let left = Box::new(self.propagate_expr(left));
-                let right = Box::new(self.propagate_expr(right));
-
-                match (&*left, &*right) {
-                    (Expr::Literal(Value::Num(l)), Expr::Literal(Value::Num(r))) => {
-                        Expr::Literal(self.eval_nums(l, r, operator))
-                    }
-                    _ => Expr::Binary { left, operator: *operator, right },
+            Expr::Var(name) => {
+                if let Some(ConstValue::Const(v)) = env.get(name) {
+                    *expr = Expr::Literal(v.clone());
                 }
             }
 
-            Expr::Grouping(expr) => {
-                let folded = Box::new(self.propagate_expr(expr));
-                if let Expr::Literal(_) = *folded {
-                    Expr::Grouping(folded)
-                } else {
-                    Expr::Grouping(folded)
-                }
+            | Expr::Binary { left, right, .. }
+            | Expr::Logical { left, right, .. }
+            | Expr::Membership { left, right, .. } => {
+                self.rewrite_expr(left, env);
+                self.rewrite_expr(right, env);
             }
 
-            Expr::Index { list, index } => {
-                let folded_index = Box::new(self.propagate_expr(index));
-                Expr::Index { list: list.clone(), index: folded_index }
+            Expr::Unary { right, .. } | Expr::Grouping(right) => {
+                self.rewrite_expr(right, env);
             }
 
-            Expr::Logical { operator, left, right } => {
-                let left = Box::new(self.propagate_expr(left));
-                let right = Box::new(self.propagate_expr(right));
-
-                match (&*left, &*right) {
-                    (Expr::Literal(Value::Bool(l)), Expr::Literal(Value::Bool(r))) => {
-                        Expr::Literal(self.eval_bools(l, r, operator))
-                    }
-                    _ => Expr::Logical { left, operator: *operator, right },
+            Expr::Call { callee, arguments } => {
+                self.rewrite_expr(callee, env);
+                for arg in arguments {
+                    self.rewrite_expr(arg, env);
                 }
             }
 
             Expr::List(items) => {
-                let folded_items: Vec<Expr> = items
-                    .into_iter()
-                    .map(|e: &Expr| self.propagate_expr(e))
-                    .collect();
-
-                Expr::List(folded_items)
+                for item in items {
+                    self.rewrite_expr(item, env);
+                }
             }
 
-            Expr::Membership { left, not, right } => {
-                let left = Box::new(self.propagate_expr(left));
-                let right = Box::new(self.propagate_expr(right));
+            Expr::Index { index, .. } => self.rewrite_expr(index, env),
 
-                if let (Expr::Literal(value), Expr::Literal(Value::List(l))) = (&*left, &*right) {
-                    if l.borrow().contains(value) {
-                        Expr::Literal(Value::Bool(!*not))
+            Expr::Slice { start, end, .. } => {
+                if let Some(s) = start {
+                    self.rewrite_expr(s, env);
+                }
+                if let Some(e) = end {
+                    self.rewrite_expr(e, env);
+                }
+            }
+
+            Expr::ListMethodCall { arguments, .. } => {
+                for arg in arguments {
+                    self.rewrite_expr(arg, env);
+                }
+            }
+
+            Expr::Literal(_) => {}
+        }
+    }
+
+    pub fn compute_constants(
+        &self,
+        cfg: &FunctionCFG
+    ) -> (HashMap<BlockId, ConstEnv>, HashMap<BlockId, ConstEnv>) {
+        let mut in_map = HashMap::new();
+        let mut out_map = HashMap::new();
+
+        for block in &cfg.blocks {
+            in_map.insert(block.id, HashMap::new());
+            out_map.insert(block.id, HashMap::new());
+        }
+
+        loop {
+            let mut changed = false;
+
+            for block in &cfg.blocks {
+                let id = block.id;
+
+                let mut in_prime = HashMap::new();
+                for pred in cfg.compute_block_predecessors(id) {
+                    let pred_out = &out_map[&pred];
+                    in_prime = if in_prime.is_empty() {
+                        pred_out.clone()
                     } else {
-                        Expr::Literal(Value::Bool(*not))
+                        self.meet_env(&in_prime, pred_out)
+                    };
+                }
+
+                let out_prime = self.transfer_block(block, &in_prime);
+
+                if in_prime != in_map[&id] || out_prime != out_map[&id] {
+                    changed = true;
+                }
+
+                in_map.insert(id, in_prime);
+                out_map.insert(id, out_prime);
+            }
+
+            if !changed {
+                break;
+            }
+        }
+
+        return (in_map, out_map);
+    }
+
+    fn transfer_block(&self, block: &BasicBlock, in_env: &ConstEnv) -> ConstEnv {
+        let mut out_env = in_env.clone();
+
+        for stmt in &block.stmts {
+            match stmt {
+                Stmt::Assign { name, value } => {
+                    let val = self.eval_expr(value, &out_env);
+                    out_env.insert(name.clone(), val);
+                }
+
+                Stmt::Var { name, initializer } => {
+                    if let Some(expr) = initializer {
+                        let val = self.eval_expr(expr, &out_env);
+                        out_env.insert(name.clone(), val);
+                    } else {
+                        out_env.insert(name.clone(), ConstValue::Undef);
                     }
-                } else {
-                    Expr::Membership { left, not: *not, right }
+                }
+
+                Stmt::Expression(expr) => {
+                    if liveliness::expr_has_side_effects(expr) {
+                        for v in out_env.values_mut() {
+                            *v = ConstValue::Nac;
+                        }
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        return out_env;
+    }
+
+    fn eval_expr(&self, expr: &Expr, env: &ConstEnv) -> ConstValue {
+        match expr {
+            Expr::Literal(v) => ConstValue::Const(v.clone()),
+
+            Expr::Var(name) => { env.get(name).cloned().unwrap_or(ConstValue::Undef) }
+
+            Expr::Binary { left, operator, right } => {
+                let l = self.eval_expr(left, env);
+                let r = self.eval_expr(right, env);
+
+                match (l, r) {
+                    (ConstValue::Const(Value::Num(a)), ConstValue::Const(Value::Num(b))) => {
+                        match operator {
+                            BinaryOp::Add => ConstValue::Const(Value::Num(a + b)),
+                            BinaryOp::Sub => ConstValue::Const(Value::Num(a - b)),
+                            BinaryOp::Mul => ConstValue::Const(Value::Num(a * b)),
+                            BinaryOp::Div => ConstValue::Const(Value::Num(a / b)),
+                            BinaryOp::Eq => ConstValue::Const(Value::Bool(a == b)),
+                            BinaryOp::NotEq => ConstValue::Const(Value::Bool(a != b)),
+                            BinaryOp::Greater => ConstValue::Const(Value::Bool(a > b)),
+                            BinaryOp::GreaterEq => ConstValue::Const(Value::Bool(a >= b)),
+                            BinaryOp::Less => ConstValue::Const(Value::Bool(a < b)),
+                            BinaryOp::LessEq => ConstValue::Const(Value::Bool(a <= b)),
+                        }
+                    }
+                    (ConstValue::Const(Value::Str(a)), ConstValue::Const(Value::Str(b))) => {
+                        if let BinaryOp::Add = operator {
+                            ConstValue::Const(Value::Str(a + &b))
+                        } else {
+                            ConstValue::Nac
+                        }
+                    }
+                    (ConstValue::Const(Value::Bool(a)), ConstValue::Const(Value::Bool(b))) => {
+                        match operator {
+                            BinaryOp::Eq => ConstValue::Const(Value::Bool(a == b)),
+                            BinaryOp::NotEq => ConstValue::Const(Value::Bool(a != b)),
+                            BinaryOp::Greater => ConstValue::Const(Value::Bool(a > b)),
+                            BinaryOp::GreaterEq => ConstValue::Const(Value::Bool(a >= b)),
+                            BinaryOp::Less => ConstValue::Const(Value::Bool(a < b)),
+                            BinaryOp::LessEq => ConstValue::Const(Value::Bool(a <= b)),
+                            _ => ConstValue::Nac,
+                        }
+                    }
+                    _ => ConstValue::Nac,
+                }
+            }
+
+            Expr::Logical { operator, left, right } => {
+                let l = self.eval_expr(left, env);
+                let r = self.eval_expr(right, env);
+
+                match (l, r) {
+                    (ConstValue::Const(Value::Bool(a)), ConstValue::Const(Value::Bool(b))) => {
+                        match operator {
+                            LogicalOp::And => ConstValue::Const(Value::Bool(a && b)),
+                            LogicalOp::Or => ConstValue::Const(Value::Bool(a || b)),
+                        }
+                    }
+                    _ => ConstValue::Nac,
                 }
             }
 
             Expr::Unary { operator, right } => {
-                let right = Box::new(self.propagate_expr(right));
+                let v = self.eval_expr(right, env);
 
-                if let Expr::Literal(v) = &*right {
-                    match (operator, v) {
-                        (UnaryOp::Neg, Value::Num(n)) => Expr::Literal(Value::Num(-n)),
-                        (UnaryOp::Not, Value::Bool(b)) => Expr::Literal(Value::Bool(!b)),
-                        _ => Expr::Unary { operator: *operator, right },
+                match v {
+                    ConstValue::Const(Value::Num(n)) => {
+                        match operator {
+                            UnaryOp::Neg => ConstValue::Const(Value::Num(-n)),
+                            _ => ConstValue::Nac,
+                        }
                     }
-                } else {
-                    Expr::Unary { operator: *operator, right }
+                    ConstValue::Const(Value::Bool(b)) => {
+                        match operator {
+                            UnaryOp::Not => ConstValue::Const(Value::Bool(!b)),
+                            _ => ConstValue::Nac,
+                        }
+                    }
+                    _ => ConstValue::Nac,
                 }
             }
 
-            Expr::Var(name) => {
-                match self.env.get(name) {
-                    Some(Some(val)) if !self.mutated_in_loop.contains(name) =>
-                        Expr::Literal(val.clone()),
-                    _ => Expr::Var(name.clone()),
-                }
-            }
+            _ => ConstValue::Nac,
+        }
+    }
 
-            _ => expr.clone(),
+    fn meet_env(&self, a: &ConstEnv, b: &ConstEnv) -> ConstEnv {
+        let mut result = HashMap::new();
+
+        let keys: HashSet<&String> = a.keys().chain(b.keys()).collect();
+
+        for key in keys {
+            let v1 = a.get(key).unwrap_or(&ConstValue::Undef);
+            let v2 = b.get(key).unwrap_or(&ConstValue::Undef);
+            result.insert(key.clone(), self.meet_value(v1, v2));
+        }
+
+        result
+    }
+
+    fn meet_value(&self, a: &ConstValue, b: &ConstValue) -> ConstValue {
+        match (a, b) {
+            (ConstValue::Undef, ConstValue::Undef) => ConstValue::Undef,
+
+            (ConstValue::Undef, _) | (_, ConstValue::Undef) => ConstValue::Undef,
+
+            (ConstValue::Const(v1), ConstValue::Const(v2)) if v1 == v2 => { a.clone() }
+
+            (ConstValue::Const(_), ConstValue::Const(_)) => ConstValue::Nac,
+
+            _ => ConstValue::Nac,
         }
     }
 }

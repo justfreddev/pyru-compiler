@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     cfg::{ BlockId, FunctionCFG, Terminator },
-    cfg_constprop::{ ConstEnv, ConstValue },
+    constprop::{ ConstEnv, ConstValue },
     expr::{ BinaryOp, Expr, LogicalOp, UnaryOp },
     stmt::Stmt,
     value::Value,
