@@ -24,7 +24,6 @@ use vm::VM;
 use actix_web::{ web, App, HttpServer };
 use actix_cors::Cors;
 
-use std::{ fs };
 use error::{ Result };
 use crate::{
     cfg::FunctionCFG,

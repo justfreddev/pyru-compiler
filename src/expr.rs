@@ -109,8 +109,6 @@ impl fmt::Display for UnaryOp {
 }
 
 impl fmt::Display for Expr {
-    /// Implements the `Display` trait for `Expr` to provide a string representation
-    /// of each expression variant.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return match self {
             Expr::Binary { left, operator, right } => {

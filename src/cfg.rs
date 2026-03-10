@@ -36,11 +36,11 @@ pub enum Terminator {
 
 #[derive(Clone)]
 pub struct FunctionCFG {
-    name: String,
+    _name: String,
     pub params: Vec<String>,
     pub captures: Vec<String>,
     entry: BlockId,
-    exit: BlockId,
+    _exit: BlockId,
     pub blocks: Vec<BasicBlock>,
     pub nested_functions: HashMap<String, FunctionCFG>,
 }
@@ -68,7 +68,7 @@ impl FunctionCFG {
         self.blocks.retain(|b| visited.contains(&b.id));
     }
 
-    fn compute_predecessors(&self) -> Vec<Vec<BlockId>> {
+    fn _compute_predecessors(&self) -> Vec<Vec<BlockId>> {
         let mut preds: Vec<Vec<BlockId>> = vec![vec![]; self.blocks.len()];
 
         for (idx, block) in self.blocks.iter().enumerate() {
@@ -96,9 +96,9 @@ impl FunctionCFG {
         return preds;
     }
 
-    pub fn compute_dominators(&self) -> Vec<HashSet<BlockId>> {
+    pub fn _compute_dominators(&self) -> Vec<HashSet<BlockId>> {
         let n = self.blocks.len();
-        let preds = self.compute_predecessors();
+        let preds = self._compute_predecessors();
 
         let mut dom: Vec<HashSet<BlockId>> = vec![HashSet::new(); n];
 
@@ -136,8 +136,8 @@ impl FunctionCFG {
         return dom;
     }
 
-    pub fn print(&self) {
-        println!("Function: {}", self.name);
+    pub fn _print(&self) {
+        println!("Function: {}", self._name);
         println!("Entry: {}", self.entry);
         println!("--------------------------------");
 
@@ -228,11 +228,11 @@ impl CFGBuilder {
         self.end_block(Terminator::Return(Some(Expr::Var("__ret".to_string()))));
 
         return FunctionCFG {
-            name,
+            _name: name,
             params,
             captures,
             entry,
-            exit,
+            _exit: exit,
             blocks: self.blocks,
             nested_functions: std::mem::take(&mut self.nested_functions),
         };

@@ -43,8 +43,6 @@ pub enum Stmt {
 }
 
 impl fmt::Display for Stmt {
-    /// Implements the `Display` trait for `Stmt` to provide a string representation
-    /// of each statement variant.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Stmt::Assign { name, value } => write!(f, "Assign({name} = {value}"),

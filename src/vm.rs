@@ -46,12 +46,7 @@ impl VM {
 
         while self.ip < self.bytecode.len() {
             let mut advance = true;
-            // println!("\n\n\nStack: {:#?}", self.stack);
-            // println!("RTE: {:#?}", self.rte);
-            // if self.frames.len() > 0 {
-            //     println!("Frame: {:#?}", self.frames.last().unwrap());
-            // }
-            // println!("Current instruction: {:#?}", self.bytecode[self.ip]);
+
             match &self.bytecode[self.ip as usize] {
                 Bytecode::PushNum(n) => self.stack.push(Value::Num(*n)),
                 Bytecode::PushStr(s) => self.stack.push(Value::Str(s.clone())),

@@ -10,7 +10,6 @@ use crate::{
     liveliness::Liveliness,
     codgen::CodeGen,
     vm::VM,
-    value::Value,
 };
 
 #[derive(Deserialize)]

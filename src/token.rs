@@ -95,27 +95,7 @@ impl Token {
     }
 }
 
-// pub struct Span {
-//     pub start: usize,
-//     pub end: usize,
-// }
-
-// impl Span {
-//     pub fn new(start: usize, end: usize) -> Self {
-//         return Self {
-//             start,
-//             end,
-//         };
-//     }
-
-//     pub fn _length(self) -> usize {
-//         return self.end - self.start;
-//     }
-// }
-
 impl fmt::Display for TokenKind {
-    /// Implements the `Display` trait for `TokenKind` to provide a string representation
-    /// of each token type.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TokenKind::LParen => write!(f, "LParen"),

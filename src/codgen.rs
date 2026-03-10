@@ -17,8 +17,8 @@ pub enum Bytecode {
     Pop,
 
     // Variable operations
-    LoadVar(String), // push variable value onto stack
-    StoreVar(String), // pop stack and assign to variable
+    LoadVar(String),
+    StoreVar(String),
 
     // Arithmetic
     Add,
@@ -41,23 +41,23 @@ pub enum Bytecode {
     Not,
 
     // Control flow
-    Jump(usize), // unconditional jump
-    JumpIfFalse(usize), // pop stack; jump if false
+    Jump(usize),
+    JumpIfFalse(usize),
 
     // Function
     Function(String, Vec<String>, Vec<String>, Vec<Bytecode>),
-    Call(usize), // call function by name, with N args
+    Call(usize),
     Return,
 
     // Print
     Print,
 
     // List operations
-    MakeList(usize), // pop N items, make list
-    Index, // pop index and list, push list[index]
-    In, // Membership
-    Slice(bool, bool), // pop end, start, list, push slice
-    ListMethodCall(String, usize), // call method on list
+    MakeList(usize),
+    Index,
+    In,
+    Slice(bool, bool),
+    ListMethodCall(String, usize),
 }
 
 pub struct CodeGen {
@@ -159,7 +159,6 @@ impl CodeGen {
 
             Stmt::Expression(expression) => {
                 self.visit_expr(expression);
-                // Same logic as before for list methods vs normal pops
                 if let Expr::ListMethodCall { object, .. } = expression {
                     self.emit(Bytecode::StoreVar(object.clone()));
                 } else {
@@ -190,16 +189,13 @@ impl CodeGen {
                 self.emit(Bytecode::StoreVar(name.clone()));
             }
 
-            // --- THE "REMOVED" SECTION ---
-
-            // These are now handled by visit_terminator or the CFG structure:
             | Stmt::If { .. }
             | Stmt::While { .. }
             | Stmt::For { .. }
             | Stmt::Break
             | Stmt::Continue
             | Stmt::Return(_) => {
-                panic!("Control flow statements should be lowered to CFG Terminators!");
+                panic!("Control flow statement in codegen");
             }
 
             Stmt::Function { name, .. } => {

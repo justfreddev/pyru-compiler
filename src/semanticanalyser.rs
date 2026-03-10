@@ -79,13 +79,6 @@ impl SemanticAnalyser {
         for stmt in body {
             let status = self.visit_stmt(stmt)?;
             if let (_, ReturnStatus::Returns) = status {
-                // let idx = body
-                //     .iter()
-                //     .position(|s| s == stmt)
-                //     .unwrap();
-                // if idx + 1 < body.len() {
-                //     println!("Unreachable code after return");
-                // }
                 return Ok(ReturnStatus::Returns);
             }
         }
