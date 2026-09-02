@@ -7,5 +7,5 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/your-binary-name /usr/local/bin/app
+COPY --from=builder /app/target/release/pyru-compiler /usr/local/bin/app
 CMD ["app"]
