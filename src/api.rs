@@ -30,12 +30,12 @@ pub struct CompileResponse {
 }
 
 fn serialize_token(token: &crate::token::Token) -> String {
-    format!(
+    return format!(
         "Token {{ kind: {:?}, lexeme: {}, line: {} }}",
         token.kind,
         token.span.literal,
         token.line
-    )
+    );
 }
 
 fn serialize_ast(ast: &[crate::stmt::Stmt]) -> serde_json::Value {

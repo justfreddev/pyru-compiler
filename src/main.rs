@@ -36,7 +36,13 @@ use crate::{
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    println!("Starting Pyru Compiler API on http://127.0.0.1:8080");
+    let port: u16 = std::env
+        ::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse()
+        .expect("PORT must be a number");
+
+    println!("Starting Pyru Compiler API on http://0.0.0.0:{}", port);
     println!("POST /compile - Compile source code");
     println!("GET /health - Health check");
 
@@ -46,7 +52,7 @@ async fn main() -> std::io::Result<()> {
             .route("/health", web::get().to(api::health_check))
             .route("/compile", web::post().to(api::compile))
     })
-        .bind("127.0.0.1:8080")?
+        .bind(("0.0.0.0", port))?
         .run().await
 }
 
